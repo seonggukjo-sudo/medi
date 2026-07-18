@@ -1,0 +1,4 @@
+spend_date,channel,campaign_id,ad_group_id,creative_id,cost,impressions,clicks
+not-a-date,네이버 검색광고,NAVER-ACCIDENT-01,ACCIDENT-KEYWORD-A,CREATIVE-01,180000,4200,188
+2026-07-12,틱톡 광고,TIKTOK-DIET-01,DIET-A,CREATIVE-08,120000,2400,90
+2026-07-12,메타 광고,META-DIET-01,DIET-B,CREATIVE-09,-90000,hello,74

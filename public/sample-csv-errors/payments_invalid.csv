@@ -1,0 +1,4 @@
+payment_id,visit_id,patient_key,paid_at,gross_amount,refund_amount,net_amount,department
+PAY-ERR-001,V-ERR-001,P-ERR-002,2026-07-13 10:50,350000,0,-350000,다이어트
+PAY-ERR-002,V-ERR-003,P-ERR-003,not-a-date,abc,0,250000,성장
+PAY-ERR-002,V-ERR-003,P-ERR-003,2026-07-14 10:50,250000,0,250000,성장

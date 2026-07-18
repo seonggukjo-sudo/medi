@@ -1,0 +1,4 @@
+lead_id,patient_key,created_at,source_channel,campaign_id,inquiry_type,department,owner_id,first_response_at,status
+,P-ERR-001,2026-07-12 09:12,네이버검색,NAVER-ACCIDENT-01,전화문의,교통사고,STAFF-01,2026-07-12 09:18,예약완료
+L-ERR-002,P-ERR-002,not-a-date,인스타그램,IG-DIET-01,온라인문의,다이어트,STAFF-02,2026-07-12 10:15,예약완료
+L-ERR-002,P-ERR-002,2026-07-12 10:30,구글검색,GOOGLE-IMMUNE-01,전화문의,암면역,STAFF-01,2026-07-12 10:36,예약완료

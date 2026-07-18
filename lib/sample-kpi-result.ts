@@ -1,0 +1,35 @@
+export const sampleKpiResult = {
+  generatedAt: "2026-07-11T22:50:00+09:00",
+  period: "2026-07-05 - 2026-07-11",
+  quality: {
+    tables: 5,
+    rows: {
+      leads: 10,
+      appointments: 8,
+      visits: 6,
+      payments: 6,
+      adSpend: 7,
+    },
+    usesPersonalInformation: false,
+    patientKeyUsed: true,
+  },
+  summary: {
+    inquiry: 10,
+    phoneInquiry: 7,
+    reservation: 7,
+    visit: 6,
+    newVisit: 5,
+    sales: 2270000,
+    adSpend: 890000,
+    reservationRate: 70,
+    reservationVisitRate: 85.7,
+    inquiryVisitRate: 60,
+    cpl: 89000,
+    cpv: 148333,
+    roas: 255.1,
+  },
+  aiReportInput: {
+    headline: "샘플 데이터 기준 문의 10건 중 예약 7건, 내원 6건으로 이어졌습니다.",
+    evidence: ["문의 10건", "예약률 70.0%", "내원 6건", "매출 2,270,000원", "광고비 890,000원", "ROAS 255.1%"],
+  },
+} as const;

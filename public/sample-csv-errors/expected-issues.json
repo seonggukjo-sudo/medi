@@ -1,0 +1,23 @@
+{
+  "purpose": "업로드 오류 상세 화면 검증용 의도적 오류 샘플",
+  "expectedIssueCodes": [
+    "missing_required_field",
+    "invalid_enum_value",
+    "invalid_date",
+    "invalid_number",
+    "negative_money",
+    "duplicate_key"
+  ],
+  "files": {
+    "leads_invalid.csv": ["missing_required_field", "invalid_date", "invalid_enum_value", "duplicate_key"],
+    "appointments_invalid.csv": ["invalid_date", "invalid_enum_value", "duplicate_key"],
+    "visits_invalid.csv": ["missing_required_field", "invalid_enum_value"],
+    "payments_invalid.csv": ["invalid_date", "invalid_number", "negative_money", "duplicate_key"],
+    "ad_spend_invalid.csv": ["invalid_date", "invalid_enum_value", "invalid_number", "negative_money"]
+  },
+  "uiExpectation": {
+    "screen": "데이터 품질 > 업로드 오류 상세",
+    "columns": ["상태", "파일", "행", "컬럼", "수정 안내"],
+    "successState": "업로드 검증 통과"
+  }
+}

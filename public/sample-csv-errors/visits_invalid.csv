@@ -1,0 +1,4 @@
+visit_id,appointment_id,patient_key,visited_at,visit_type,department,treatment_type,visit_source
+V-ERR-001,A-ERR-001,P-ERR-002,2026-07-13 10:20,첫방문,다이어트,상담,카페(청라맘스)
+,A-ERR-002,P-ERR-003,2026-07-13 11:20,신환,성장,성장상담,네이버검색
+V-ERR-003,A-ERR-003,,2026-07-14 09:30,재진,교통사고,도수치료,블로그

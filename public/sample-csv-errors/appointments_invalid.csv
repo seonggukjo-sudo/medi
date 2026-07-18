@@ -1,0 +1,4 @@
+appointment_id,lead_id,patient_key,booked_at,scheduled_at,department,status,cancel_reason
+A-ERR-001,L-ERR-002,P-ERR-002,2026-07-12 10:40,wrong-date,다이어트,예약확정,
+A-ERR-002,L-ERR-003,P-ERR-003,2026-07-12 11:00,2026-07-13 14:00,기타진료,예약확정,
+A-ERR-002,L-ERR-003,P-ERR-003,2026-07-12 11:10,2026-07-13 15:00,성장,확정대기,
