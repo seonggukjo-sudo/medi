@@ -1022,7 +1022,7 @@ export default function Home() {
       const now = new Date();
       const seoulNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
       const nextRun = new Date(seoulNow);
-      nextRun.setHours(13, 0, 0, 0);
+      nextRun.setHours(9, 0, 0, 0);
       if (nextRun <= seoulNow) nextRun.setDate(nextRun.getDate() + 1);
       timer = window.setTimeout(() => {
         setPlaceRankRefreshKey((value) => value + 1);
