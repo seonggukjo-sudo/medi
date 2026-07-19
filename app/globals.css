@@ -284,6 +284,83 @@ button {
   backdrop-filter: blur(5px);
 }
 
+.unsaved-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 19, 35, 0.52);
+  backdrop-filter: blur(5px);
+}
+
+.unsaved-dialog {
+  width: min(460px, 100%);
+  padding: 26px;
+  border: 1px solid #ead9c6;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 26px 70px rgba(8, 25, 46, 0.3);
+}
+
+.unsaved-dialog h2 {
+  margin: 13px 0 8px;
+  color: #17263c;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+
+.unsaved-dialog p {
+  margin: 0;
+  color: #68768a;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.unsaved-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 22px;
+}
+
+.danger-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: #c74e48;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.danger-button:hover,
+.danger-button:focus-visible {
+  background: #ad3f3a;
+  outline: 2px solid rgba(199, 78, 72, 0.18);
+}
+
+@media (max-width: 640px) {
+  .unsaved-backdrop {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .unsaved-dialog {
+    padding: 21px;
+    border-radius: 17px;
+  }
+
+  .unsaved-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
 .kpi-detail-dialog {
   width: min(680px, 100%);
   max-height: min(760px, calc(100vh - 48px));

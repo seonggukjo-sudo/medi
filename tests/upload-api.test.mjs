@@ -96,6 +96,22 @@ test("일자별 수치 저장은 수정 사유를 검증하고 감사 이력에 
   assert.match(pageSource, /사유 미기록/);
 });
 
+test("저장하지 않은 일자별 수정값은 메뉴 이동과 창 종료 전에 보호한다", async () => {
+  const [pageSource, cssSource] = await Promise.all([
+    readFile(pageUrl, "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /beforeunload/);
+  assert.match(pageSource, /dailyEditBackupRef/);
+  assert.match(pageSource, /requestMenuChange/);
+  assert.match(pageSource, /저장하지 않은 변경사항이 있습니다/);
+  assert.match(pageSource, /계속 수정/);
+  assert.match(pageSource, /변경 취소 후 이동/);
+  assert.match(pageSource, /discardDailyChangesAndNavigate/);
+  assert.match(cssSource, /\.unsaved-dialog/);
+});
+
 test("업로드 화면과 운영 문서는 서버 저장 API 준비 상태를 안내한다", async () => {
   const [pageSource, updateDocSource] = await Promise.all([
     readFile(pageUrl, "utf8"),

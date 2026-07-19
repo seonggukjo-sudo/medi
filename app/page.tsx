@@ -780,6 +780,7 @@ function NaverAdTrendChart({
 export default function Home() {
   const [isClientReady, setIsClientReady] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuKey>("kpi");
+  const [pendingMenu, setPendingMenu] = useState<MenuKey | null>(null);
   const [customStartDate, setCustomStartDate] = useState(() => dynamicPeriodRange("최근 7일").start);
   const [customEndDate, setCustomEndDate] = useState(() => dynamicPeriodRange("최근 7일").end);
   const [period, setPeriod] = useState<PeriodOption>("최근 7일");
@@ -863,6 +864,17 @@ export default function Home() {
   const [settingsHistory, setSettingsHistory] = useState<SettingsHistoryRow[]>([]);
   const [settingsSaveState, setSettingsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dailyEditBackupRef = useRef<DailyDataRow[] | null>(null);
+
+  useEffect(() => {
+    if (!isDataDirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [isDataDirty]);
 
   useEffect(() => {
     queueMicrotask(() => setIsClientReady(true));
@@ -1219,7 +1231,10 @@ export default function Home() {
 
   const updateDailyData = (date: string, field: keyof Omit<DailyDataRow, "date">, value: string) => {
     const numericValue = Math.max(0, Number(value.replace(/[^0-9]/g, "")) || 0);
-    setDailyData((current) => current.map((row) => row.date === date ? { ...row, [field]: numericValue } : row));
+    setDailyData((current) => {
+      if (!dailyEditBackupRef.current) dailyEditBackupRef.current = current.map((row) => ({ ...row }));
+      return current.map((row) => row.date === date ? { ...row, [field]: numericValue } : row);
+    });
     setEditedDailyDates((current) => current.includes(date) ? current : [...current, date]);
     setIsDataDirty(true);
     setDailySaveState("idle");
@@ -1228,6 +1243,7 @@ export default function Home() {
   const restoreDailyData = (row: DailyDataRow) => {
     if (!canManageData) return;
     setDailyData((current) => {
+      if (!dailyEditBackupRef.current) dailyEditBackupRef.current = current.map((item) => ({ ...item }));
       const restored = { date: row.date, inquiries: row.inquiries, reservations: row.reservations, visits: row.visits, sales: row.sales, adSpend: row.adSpend };
       return current.some((item) => item.date === row.date)
         ? current.map((item) => item.date === row.date ? restored : item)
@@ -1273,6 +1289,7 @@ export default function Home() {
       setEditedDailyDates([]);
       setIsDataDirty(false);
       setDailyEditReason("");
+      dailyEditBackupRef.current = null;
       setDailySaveState("saved");
       setValidationResults(`일자별 수정값 ${body.saved ?? rows.length}건을 서버에 저장하고 변경 이력에 기록했습니다.`);
     } catch (error) {
@@ -2366,6 +2383,26 @@ export default function Home() {
     crmReservations: actualKpiResult?.summary.reservation ?? null,
     utmMissing: ga4Data?.summary.utmMissingSessions ?? null,
     ready: Boolean(ga4Data && actualKpiResult && ga4SessionsReconciled),
+  };
+
+  const requestMenuChange = (menu: MenuKey) => {
+    if (activeMenu === "data" && menu !== "data" && isDataDirty) {
+      setPendingMenu(menu);
+      return;
+    }
+    setActiveMenu(menu);
+  };
+
+  const discardDailyChangesAndNavigate = () => {
+    if (dailyEditBackupRef.current) setDailyData(dailyEditBackupRef.current);
+    dailyEditBackupRef.current = null;
+    setEditedDailyDates([]);
+    setIsDataDirty(false);
+    setDailyEditReason("");
+    setDailySaveState("idle");
+    const nextMenu = pendingMenu;
+    setPendingMenu(null);
+    if (nextMenu) setActiveMenu(nextMenu);
   };
 
   const dataTrustSummary = {
@@ -4190,7 +4227,7 @@ export default function Home() {
                   type="button"
                   className={activeMenu === item.key ? "nav-item active" : "nav-item"}
                   aria-current={activeMenu === item.key ? "page" : undefined}
-                  onClick={() => setActiveMenu(item.key)}
+                  onClick={() => requestMenuChange(item.key)}
                 >
                   {item.label}
                 </button>
@@ -4332,6 +4369,20 @@ export default function Home() {
             <div className="kpi-detail-actions">
               <button className="pill" type="button" onClick={() => setSelectedKpiLabel(null)}>계속 보기</button>
               {canManageData ? <button className="primary-button" type="button" onClick={() => { setSelectedKpiLabel(null); setActiveMenu("data"); }}>원천 데이터 확인</button> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingMenu ? (
+        <div className="unsaved-backdrop" role="presentation">
+          <section className="unsaved-dialog" role="alertdialog" aria-modal="true" aria-labelledby="unsaved-title" aria-describedby="unsaved-description">
+            <span className="source-badge review">저장 전 확인</span>
+            <h2 id="unsaved-title">저장하지 않은 변경사항이 있습니다.</h2>
+            <p id="unsaved-description">일자별 수치 {editedDailyDates.length}일과 수정 사유가 아직 서버에 저장되지 않았습니다.</p>
+            <div className="unsaved-actions">
+              <button className="pill" type="button" onClick={() => setPendingMenu(null)}>계속 수정</button>
+              <button className="danger-button" type="button" onClick={discardDailyChangesAndNavigate}>변경 취소 후 이동</button>
             </div>
           </section>
         </div>
