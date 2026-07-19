@@ -3609,6 +3609,26 @@ body {
 }
 
 @media (max-width: 1280px) {
+  .marketing-flow-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .marketing-flow-stage:nth-child(4) i {
+    display: none;
+  }
+
+  .budget-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ga4-crm-bridge-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .ga4-crm-bridge-grid > i {
+    display: none;
+  }
+
   .topbar {
     grid-template-columns: minmax(240px, 1fr) auto;
   }
@@ -4811,6 +4831,191 @@ body {
 .table-row b,
 .table-row strong {
   color: #29354a;
+  font-size: 11px;
+}
+
+.marketing-flow-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid #e6ebf2;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f8fbff 0%, #f5faf8 100%);
+}
+
+.marketing-flow-stage {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 72px;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 12px;
+  border: 1px solid #e7ebf1;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.marketing-flow-stage span,
+.marketing-flow-stage small {
+  color: #8792a5;
+  font-size: 10px;
+}
+
+.marketing-flow-stage strong {
+  color: #1f2e46;
+  font-size: 16px;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.marketing-flow-stage i {
+  position: absolute;
+  z-index: 2;
+  right: -13px;
+  color: #9aabc2;
+  font-size: 14px;
+  font-style: normal;
+}
+
+.channel-decision-panel,
+.budget-action-panel,
+.ga4-crm-bridge-panel,
+.data-trust-panel {
+  margin-top: 10px;
+}
+
+.channel-decision-head,
+.channel-decision-row {
+  grid-template-columns: minmax(130px, 1.2fr) repeat(5, minmax(90px, 0.8fr)) minmax(120px, 1fr) minmax(80px, 0.7fr);
+  min-width: 920px;
+}
+
+.decision-action {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px !important;
+  white-space: nowrap;
+}
+
+.decision-action.grow { color: #087a5b; background: #e6f7f1; }
+.decision-action.improve { color: #a16207; background: #fff4d6; }
+.decision-action.review { color: #b44545; background: #ffeded; }
+
+.budget-action-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.budget-action-card,
+.ga4-crm-bridge-grid article,
+.data-trust-grid article {
+  display: flex;
+  min-width: 0;
+  min-height: 96px;
+  flex-direction: column;
+  gap: 7px;
+  padding: 13px;
+  border: 1px solid #e7ebf1;
+  border-radius: 11px;
+  background: #fbfcfe;
+}
+
+.budget-action-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.budget-action-card span,
+.budget-action-card small,
+.ga4-crm-bridge-grid span,
+.ga4-crm-bridge-grid small,
+.data-trust-grid span,
+.data-trust-grid small {
+  color: #7d899c;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.budget-action-card strong,
+.ga4-crm-bridge-grid strong,
+.data-trust-grid strong {
+  color: #1f2e46;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.ga4-crm-bridge-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.ga4-crm-bridge-grid > i {
+  color: #91a0b7;
+  font-style: normal;
+}
+
+.ga4-crm-bridge-grid .bridge-warning,
+.data-trust-grid .trust-warning {
+  border-color: #f4d6ad;
+  background: #fffaf0;
+}
+
+.ga4-crm-bridge-grid .bridge-good,
+.data-trust-grid .trust-good {
+  border-color: #cde9df;
+  background: #f4fbf8;
+}
+
+.data-trust-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.consult-definition-grid,
+.consult-secondary-wide,
+.consult-trend-wide {
+  display: block;
+}
+
+.consult-trend-wide .chart-panel {
+  width: 100%;
+}
+
+.consult-trend-wide .line-chart {
+  min-height: 260px;
+}
+
+.section-helper,
+.table-helper,
+.chart-period-label,
+.chart-period-note {
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.axis-label {
+  font-size: 11px;
+}
+
+.data-table {
+  font-size: 11px;
+}
+
+.table-head {
   font-size: 10px;
 }
 
@@ -5210,6 +5415,29 @@ body {
 
   .page {
     padding: 14px 10px calc(26px + env(safe-area-inset-bottom));
+  }
+
+  .marketing-flow-strip {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+  }
+
+  .marketing-flow-stage {
+    min-width: 138px;
+    flex: 0 0 138px;
+    scroll-snap-align: start;
+  }
+
+  .marketing-flow-stage i {
+    display: none;
+  }
+
+  .budget-action-grid,
+  .ga4-crm-bridge-grid,
+  .data-trust-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .hero-row {

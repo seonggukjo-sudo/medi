@@ -2217,14 +2217,67 @@ export default function Home() {
 
   const ga4DeviceRows = useMemo(() => ga4Data?.devices ?? [], [ga4Data]);
 
+  const marketingFlowStages = [
+    { label: "광고 노출", value: mergedAdSourceRows.length ? mergedAdSourceTotals.impressions.toLocaleString("ko-KR") : "미연동", source: "광고 매체" },
+    { label: "광고 클릭", value: mergedAdSourceRows.length ? mergedAdSourceTotals.clicks.toLocaleString("ko-KR") : "미연동", source: "광고 매체" },
+    { label: "웹 전환", value: ga4Data ? ga4Data.summary.keyEvents.toLocaleString("ko-KR") : "미연동", source: "GA4" },
+    { label: "유효 문의", value: actualKpiResult ? currentSummary.inquiry.toLocaleString("ko-KR") : "미연동", source: "CRM" },
+    { label: "예약", value: actualKpiResult ? currentSummary.reservation.toLocaleString("ko-KR") : "미연동", source: "CRM" },
+    { label: "신환 내원", value: actualKpiResult ? currentSummary.newVisit.toLocaleString("ko-KR") : "미연동", source: "CRM" },
+    { label: "매출", value: actualKpiResult ? formatImportedMoney(currentSummary.sales) : "미연동", source: "CRM" },
+  ];
+
+  const channelDecisionRows = mergedAdSourceRows.map((row) => {
+    const cpl = row.inquiries > 0 ? Math.round(row.spend / row.inquiries) : null;
+    const reservationCpa = row.reservations > 0 ? Math.round(row.spend / row.reservations) : null;
+    const visitCpa = row.visits > 0 ? Math.round(row.spend / row.visits) : null;
+    const roas = row.spend > 0 && row.sales > 0 ? Math.round((row.sales / row.spend) * 100) : null;
+    const action = row.inquiries === 0
+      ? "문의 귀속 확인"
+      : row.sales === 0
+        ? "매출 귀속 확인"
+        : roas !== null && roas >= 500
+          ? "유지 · 확대 검토"
+          : visitCpa !== null
+            ? "내원 CPA 개선"
+            : "내원 연결 확인";
+    return { ...row, cpl, reservationCpa, visitCpa, roas, action };
+  });
+
+  const ga4CrmBridge = {
+    webConversions: ga4Data?.summary.keyEvents ?? null,
+    crmInquiries: actualKpiResult?.summary.inquiry ?? null,
+    crmReservations: actualKpiResult?.summary.reservation ?? null,
+    utmMissing: ga4Data?.summary.utmMissingSessions ?? null,
+    ready: Boolean(ga4Data && actualKpiResult && ga4SessionsReconciled),
+  };
+
+  const dataTrustSummary = {
+    connectedSources: importedDataCounts.filter((item) => item.count > 0).length,
+    totalSources: importedDataCounts.length,
+    missingLinks: dataQuality?.warnings.missingLinks ?? 0,
+    duplicates: dataQuality?.warnings.duplicates ?? 0,
+    mismatches: reconciliationRows.filter((row) => !row.passed).length,
+  };
+
   const renderKpi = () => (
     <>
       <section className="panel kpi-panel">
-        <div className="section-title">병원 경영 핵심 KPI</div>
-        <p className="section-helper">상담·예약·내원·매출·광고비 전체 데이터를 동일한 선택 기간으로 집계한 핵심 지표입니다.</p>
+        <div className="section-title">마케팅 · CRM 경영 핵심 KPI</div>
+        <p className="section-helper">광고 유입부터 문의·예약·내원·매출까지 동일한 선택 기간과 계산식으로 연결한 핵심 지표입니다.</p>
         <div className="kpi-grid">
           {executiveKpiCards.map((card) => (
             <MetricCardView key={card.label} card={card} onClick={() => setActiveMenu("data")} />
+          ))}
+        </div>
+        <div className="marketing-flow-strip" aria-label="마케팅 CRM 전체 흐름">
+          {marketingFlowStages.map((stage, index) => (
+            <div className="marketing-flow-stage" key={stage.label}>
+              <span>{stage.label}</span>
+              <strong>{stage.value}</strong>
+              <small>{stage.source}</small>
+              {index < marketingFlowStages.length - 1 ? <i aria-hidden="true">→</i> : null}
+            </div>
           ))}
         </div>
       </section>
@@ -2300,7 +2353,7 @@ export default function Home() {
           </div>
 
           <div className="ai-actions">
-            <h3>우선 실행 제안</h3>
+            <h3>문제 · 근거 · 실행 제안</h3>
             {kpiRecommendations.map((item, index) => (
               <div className="recommendation" key={item.title}>
                 <b>{index + 1}</b>
@@ -2448,48 +2501,36 @@ export default function Home() {
         </div>
       </article>
 
-      <section className="summary-grid">
-        <article className="panel summary-cards-panel">
-          <ChartHeader title="주요 데이터 요약" />
-          <div className="summary-grid-inner">
-            <MiniTrendCard title="상담→예약 전환율" value={actualKpiResult ? `${currentSummary.reservationRate ?? "-"}%` : "-"} delta={actualKpiResult ? rateDelta(currentSummary.reservationRate, previousSummary.reservationRate) : "데이터 미연동"} values={[]} color="#2ec4a8" />
-            <MiniTrendCard title="예약→내원 전환율" value={actualKpiResult ? `${currentSummary.reservationVisitRate ?? "-"}%` : "-"} delta={actualKpiResult ? rateDelta(currentSummary.reservationVisitRate, previousSummary.reservationVisitRate) : "데이터 미연동"} values={[]} color="#4b80f7" />
-            <MiniTrendCard title="노쇼율" value={actualKpiResult ? `${currentSummary.noShowRate ?? "-"}%` : "-"} delta={actualKpiResult ? rateDelta(currentSummary.noShowRate, previousSummary.noShowRate) : "데이터 미연동"} values={[]} color="#8e63d6" />
-            <MiniTrendCard title="1인당 매출(ARPPU)" value={actualKpiResult && currentSummary.newVisit ? formatWon(Math.round(currentSummary.sales / currentSummary.newVisit)) : "-"} delta={actualKpiResult ? "실데이터" : "데이터 미연동"} values={[]} color="#f7b23b" />
-            <MiniTrendCard title="신규 문의 비중" value="-" delta="데이터 미연동" values={[]} color="#d95d9f" />
-            <MiniTrendCard title="재방문 비중" value="-" delta="데이터 미연동" values={[]} color="#26c8a8" />
-          </div>
-        </article>
-
-        <article className="panel table-panel">
-          <ChartHeader title="채널 성과 요약" />
+      <section className="panel table-panel channel-decision-panel">
+          <ChartHeader title="매체별 예산 판단 · CRM 전환 성과" right={<span className="chart-period-note">{periodDefinition.range}</span>} />
+          <p className="table-helper">광고 원천 수치와 CRM 문의·예약·내원·매출 귀속을 연결해 다음 예산 조정 판단에 필요한 지표만 표시합니다.</p>
 
           <div className="data-table">
-            <div className="table-head">
-              <span>채널</span>
+            <div className="table-head channel-decision-head">
+              <span>매체</span>
               <span>광고비</span>
-              <span>문의</span>
-              <span>예약</span>
-              <span>내원</span>
-              <span>전환율(문의→내원)</span>
-              <span>매출</span>
+              <span>CPL</span>
+              <span>예약 CPA</span>
+              <span>내원 CPA</span>
               <span>ROAS</span>
+              <span>판단</span>
+              <span>출처</span>
             </div>
 
-            {displayedChannelRows.map((row) => (
-              <div className="table-row" key={row.name}>
+            {channelDecisionRows.map((row) => (
+              <div className="table-row channel-decision-row" key={row.name}>
                 <b>{row.name}</b>
-                <span>{row.spend}</span>
-                <span>{row.inquiry}</span>
-                <span>{row.reserve}</span>
-                <span>{row.visit}</span>
-                <span>{row.conversion}</span>
-                <span>{row.sales}</span>
-                <strong>{row.roas}</strong>
+                <span>{formatWon(row.spend)}</span>
+                <span>{row.cpl === null ? "-" : formatWon(row.cpl)}</span>
+                <span>{row.reservationCpa === null ? "-" : formatWon(row.reservationCpa)}</span>
+                <span>{row.visitCpa === null ? "-" : formatWon(row.visitCpa)}</span>
+                <strong>{row.roas === null ? "-" : `${row.roas}%`}</strong>
+                <b className={`decision-action ${row.action.includes("확인") ? "review" : row.action.includes("확대") ? "grow" : "improve"}`}>{row.action}</b>
+                <span>{row.automated ? "자동 연동" : "업로드"}</span>
               </div>
             ))}
+            {!channelDecisionRows.length ? <div className="data-empty-row">선택 기간의 광고비와 CRM 귀속 데이터가 없어 예산 판단을 보류합니다.</div> : null}
           </div>
-        </article>
       </section>
     </>
   );
@@ -2536,7 +2577,7 @@ export default function Home() {
           </div>
 
           <div className="ai-actions">
-            <h3>우선 실행 제안</h3>
+            <h3>문제 · 근거 · 실행 제안</h3>
             {consultRecommendations.map((item, index) => (
               <div className="recommendation" key={item.title}>
                 <b>{index + 1}</b>
@@ -2576,22 +2617,6 @@ export default function Home() {
       </section>
 
       <section className="consult-definition-grid">
-        <article className="panel detail-panel">
-          <ChartHeader title="전화문의 · 예약" />
-          <div className="detail-card-grid three-columns">
-            <div className="metric-mini-card"><span>전화문의</span><strong>{currentSummary.phoneInquiry.toLocaleString("ko-KR")}</strong><small>전체 문의 중 전화 유입</small></div>
-            <div className="metric-mini-card"><span>전화예약</span><strong>{currentSummary.phoneReservation.toLocaleString("ko-KR")}</strong><small>전화 문의 후 예약 완료</small></div>
-            <div className="metric-mini-card"><span>전화예약률</span><strong>{currentSummary.phoneInquiry === 0 ? "0%" : `${Math.round((currentSummary.phoneReservation / currentSummary.phoneInquiry) * 1000) / 10}%`}</strong><small>전화예약 ÷ 전화문의</small></div>
-          </div>
-        </article>
-        <article className="panel detail-panel">
-          <ChartHeader title="온라인 문의 · 예약" />
-          <div className="detail-card-grid three-columns">
-            <div className="metric-mini-card"><span>온라인문의</span><strong>{currentSummary.onlineInquiry.toLocaleString("ko-KR")}</strong><small>온라인 채널 문의 합계</small></div>
-            <div className="metric-mini-card"><span>온라인예약</span><strong>{currentSummary.onlineReservation.toLocaleString("ko-KR")}</strong><small>온라인 문의 후 예약 완료</small></div>
-            <div className="metric-mini-card"><span>온라인예약률</span><strong>{currentSummary.onlineInquiry === 0 ? "0%" : `${Math.round((currentSummary.onlineReservation / currentSummary.onlineInquiry) * 1000) / 10}%`}</strong><small>온라인예약 ÷ 온라인문의</small></div>
-          </div>
-        </article>
         <article className="panel detail-panel visit-definition-panel">
           <ChartHeader title="신환 내원 지표" />
           <div className="detail-card-grid five-columns">
@@ -2672,7 +2697,7 @@ export default function Home() {
         </article>
       </section>
 
-      <section className="consult-secondary-grid">
+      <section className="consult-secondary-grid consult-secondary-wide">
         <article className="panel new-patient-panel">
           <ChartHeader title="신환수 현황" right={<span className="chart-period-label">{periodDefinition.range}</span>} />
           <div className="new-patient-total"><span>신환수</span><strong>{newPatientSummary.current.toLocaleString("ko-KR")}</strong><b className={newPatientSummary.trendClass}>{newPatientSummary.delta}</b><small>{newPatientSummary.compareLabel} {newPatientSummary.previous.toLocaleString("ko-KR")}건</small></div>
@@ -2687,15 +2712,6 @@ export default function Home() {
           </div>
         </article>
 
-        <article className="panel trend-summary-panel">
-          <ChartHeader title={`${periodDefinition.label} 추이 요약`} />
-          <div className="summary-grid-inner four-columns">
-            <MiniTrendCard title="전체 문의" value={actualKpiResult ? currentSummary.inquiry.toLocaleString("ko-KR") : "-"} delta={actualKpiResult ? countDelta(currentSummary.inquiry, previousSummary.inquiry) : "데이터 미연동"} values={activeConsultInquiryTrend} color="#4b80f7" />
-            <MiniTrendCard title="전체 예약" value={actualKpiResult ? currentSummary.reservation.toLocaleString("ko-KR") : "-"} delta={actualKpiResult ? countDelta(currentSummary.reservation, previousSummary.reservation) : "데이터 미연동"} values={activeConsultReserveTrend} color="#8e63d6" />
-            <MiniTrendCard title="예약률" value={actualKpiResult ? `${currentSummary.reservationRate ?? "-"}%` : "-"} delta={actualKpiResult ? rateDelta(currentSummary.reservationRate, previousSummary.reservationRate) : "데이터 미연동"} values={activeConsultReservationRateTrend} color="#f7b23b" />
-            <MiniTrendCard title="신환수" value={actualKpiResult ? currentSummary.newVisit.toLocaleString("ko-KR") : "-"} delta={actualKpiResult ? countDelta(currentSummary.newVisit, previousSummary.newVisit) : "데이터 미연동"} values={activeConsultVisitTrend} color="#2ec4a8" />
-          </div>
-        </article>
       </section>
 
       </div>
@@ -2740,7 +2756,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="summary-grid consult-summary-grid">
+      <section className="consult-summary-grid consult-trend-wide">
         <article className="panel chart-panel">
           <ChartHeader
             title="상담 · 예약 · 신환 추이"
@@ -2803,15 +2819,6 @@ export default function Home() {
           </svg>
         </article>
 
-        <article className="panel summary-cards-panel">
-          <ChartHeader title="상담 채널별 핵심 수치" />
-          <div className="summary-grid-inner">
-            <MiniTrendCard title="전화문의" value={actualKpiResult ? `${currentSummary.phoneInquiry ?? "-"}건` : "-"} delta={actualKpiResult ? countDelta(currentSummary.phoneInquiry ?? 0, previousSummary.phoneInquiry ?? 0) : "데이터 미연동"} values={activeConsultInquiryTrend} color="#2ec4a8" />
-            <MiniTrendCard title="예약 문의" value={actualKpiResult ? `${currentSummary.phoneReservation ?? "-"}건` : "-"} delta={actualKpiResult ? countDelta(currentSummary.phoneReservation ?? 0, previousSummary.phoneReservation ?? 0) : "데이터 미연동"} values={activeConsultReserveTrend} color="#4b80f7" />
-            <MiniTrendCard title="예약률" value={actualKpiResult ? `${currentSummary.phoneInquiry ? Math.round((currentSummary.phoneReservation / currentSummary.phoneInquiry) * 1000) / 10 : "-"}%` : "-"} delta={actualKpiResult ? rateDelta(currentSummary.phoneInquiry ? Math.round((currentSummary.phoneReservation / currentSummary.phoneInquiry) * 1000) / 10 : null, previousSummary.phoneInquiry ? Math.round((previousSummary.phoneReservation / previousSummary.phoneInquiry) * 1000) / 10 : null) : "데이터 미연동"} values={[]} color="#8e63d6" />
-            <MiniTrendCard title="신환수" value={actualKpiResult ? `${currentSummary.newVisit ?? "-"}` : "-"} delta={actualKpiResult ? countDelta(currentSummary.newVisit, previousSummary.newVisit) : "데이터 미연동"} values={activeConsultVisitTrend} color="#f7b23b" />
-          </div>
-        </article>
       </section>
     </>
   );
@@ -2879,7 +2886,7 @@ export default function Home() {
           </div>
 
           <div className="ai-actions">
-            <h3>우선 실행 제안</h3>
+            <h3>문제 · 근거 · 실행 제안</h3>
             {adRecommendations.map((item, index) => (
               <div className="recommendation" key={item.title}>
                 <b>{index + 1}</b>
@@ -2987,44 +2994,19 @@ export default function Home() {
         </article>
       </section>
 
-      <section className="summary-grid ads-efficiency-grid">
-        <article className="panel summary-cards-panel">
-          <ChartHeader title="요일별 효율 지표" />
-          <div className="summary-grid-inner">
-            <MiniTrendCard title="CTR" value="-" delta="광고 원천 세부 데이터 필요" values={[]} color="#4b80f7" />
-            <MiniTrendCard title="전환율" value={actualKpiResult ? `${actualKpiResult.summary.reservationRate ?? "-"}%` : "-"} delta={actualKpiResult ? "실데이터" : "데이터 미연동"} values={[]} color="#2ec4a8" />
-            <MiniTrendCard title="CPA" value={actualKpiResult ? (actualKpiResult.summary.cpv ? formatWon(Math.round(actualKpiResult.summary.cpv)) : "-") : "-"} delta={actualKpiResult ? "실데이터" : "데이터 미연동"} values={[]} color="#8e63d6" />
-            <MiniTrendCard title="ROAS" value={actualKpiResult?.summary.roas !== null && actualKpiResult?.summary.roas !== undefined ? `${actualKpiResult.summary.roas}%` : "-"} delta={actualKpiResult ? "실데이터" : "데이터 미연동"} values={[]} color="#f7b23b" />
-          </div>
-        </article>
-
-        <article className="panel table-panel">
-          <ChartHeader title="매체별 광고비 상세" />
-
-          <div className="data-table">
-            <div className="table-head ad-table-head">
-              <span>채널</span>
-              <span>합계(원)</span>
-              <span>비중</span>
-              <span>일평균(원)</span>
-              <span>데이터 상태</span>
-            </div>
-
-            {mergedAdSourceRows.map((row) => {
-              const totalSpend = mergedAdSourceTotals.spend;
-              const share = totalSpend ? Math.round((row.spend / totalSpend) * 1000) / 10 : 0;
-              const average = activePeriodDays ? Math.round(row.spend / activePeriodDays) : 0;
-              return <div className="table-row ad-table-row" key={row.name}>
-                <b>{row.name}</b>
-                <span>{formatWon(row.spend)}</span>
-                <span>{share}%</span>
-                <span>{formatWon(average)}</span>
-                <strong>{row.automated ? "자동 연동" : "업로드"}</strong>
-              </div>;
-            })}
-            {!mergedAdSourceRows.length ? <div className="data-empty-row">선택 기간의 매체별 광고비 데이터가 없습니다.</div> : null}
-          </div>
-        </article>
+      <section className="panel table-panel budget-action-panel">
+        <ChartHeader title="매체별 예산 조정 판단" right={<span className="chart-period-note">{periodDefinition.range}</span>} />
+        <p className="table-helper">단순 지출 순위가 아니라 광고비가 CRM 문의·예약·내원·매출로 연결된 정도를 기준으로 분류합니다.</p>
+        <div className="budget-action-grid">
+          {channelDecisionRows.map((row) => (
+            <article className="budget-action-card" key={`budget-${row.name}`}>
+              <div><span>{row.name}</span><b className={`decision-action ${row.action.includes("확인") ? "review" : row.action.includes("확대") ? "grow" : "improve"}`}>{row.action}</b></div>
+              <strong>{row.roas === null ? "ROAS 미집계" : `ROAS ${row.roas}%`}</strong>
+              <small>내원 CPA {row.visitCpa === null ? "-" : formatWon(row.visitCpa)} · 광고비 {formatWon(row.spend)}</small>
+            </article>
+          ))}
+          {!channelDecisionRows.length ? <div className="data-empty-row">광고 원천 데이터와 CRM 귀속값 연결 후 예산 판단을 표시합니다.</div> : null}
+        </div>
       </section>
 
       <section className="panel ad-weekday-panel">
@@ -3390,7 +3372,7 @@ export default function Home() {
             <div className="ai-notes">{ga4Recommendations.map((item) => <div key={item.title}>{item.detail}</div>)}</div>
           </div>
           <div className="ai-actions">
-            <h3>우선 실행 제안</h3>
+            <h3>문제 · 근거 · 실행 제안</h3>
             {ga4Recommendations.map((item, index) => (
               <div className="recommendation" key={item.title}><b>{index + 1}</b><div><strong>{item.title}</strong><span>{item.detail}</span><small className="recommendation-meta">근거 {periodDefinition.range} · 원인 단정 없이 검증 필요 · 기한 다음 비교 기간</small></div></div>
             ))}
@@ -3400,6 +3382,19 @@ export default function Home() {
           <span>GA4 분석은 개인 식별정보 없이 채널·이벤트 집계 데이터만 사용합니다.</span>
           <button type="button" onClick={() => setGa4Automation((enabled) => !enabled)}>{ga4Automation ? "자동 분석 중지" : "자동 분석 시작"}</button>
         </footer>
+      </section>
+
+      <section className="panel ga4-crm-bridge-panel">
+        <ChartHeader title="GA4 → CRM 전환 연결 진단" right={<span className={`reconcile-status ${ga4CrmBridge.ready ? "pass" : "fail"}`}>{ga4CrmBridge.ready ? "대조 가능" : "연결 보완 필요"}</span>} />
+        <p className="table-helper">웹 행동과 상담 결과는 동일 건이 아닐 수 있으므로 임의로 합치지 않고, 같은 기간의 수집 규모와 누락 신호를 나란히 표시합니다.</p>
+        <div className="ga4-crm-bridge-grid">
+          <article><span>GA4 주요 전환</span><strong>{ga4CrmBridge.webConversions === null ? "미연동" : `${ga4CrmBridge.webConversions.toLocaleString("ko-KR")}건`}</strong><small>전화·카카오·예약 주요 이벤트</small></article>
+          <i aria-hidden="true">→</i>
+          <article><span>CRM 유효 문의</span><strong>{ga4CrmBridge.crmInquiries === null ? "미연동" : `${ga4CrmBridge.crmInquiries.toLocaleString("ko-KR")}건`}</strong><small>전화 + 온라인 문의</small></article>
+          <i aria-hidden="true">→</i>
+          <article><span>CRM 예약</span><strong>{ga4CrmBridge.crmReservations === null ? "미연동" : `${ga4CrmBridge.crmReservations.toLocaleString("ko-KR")}건`}</strong><small>예약 완료 건수</small></article>
+          <article className={ga4CrmBridge.utmMissing ? "bridge-warning" : "bridge-good"}><span>UTM 누락 세션</span><strong>{ga4CrmBridge.utmMissing === null ? "미연동" : `${ga4CrmBridge.utmMissing.toLocaleString("ko-KR")}건`}</strong><small>{ga4CrmBridge.utmMissing ? "광고 소재 URL 보완 필요" : "캠페인 식별 정상"}</small></article>
+        </div>
       </section>
 
       <section className="panel table-panel ga4-channel-panel">
@@ -3475,6 +3470,16 @@ export default function Home() {
           <MetricCardView card={{ label: "정상 반영", value: `${dataQuality?.uploadSummary.validated ?? 0}건`, delta: "검수 완료", previous: "오류 없는 업로드", icon: "", tone: "blue" }} />
           <MetricCardView card={{ label: "검수 대기", value: `${dataQuality?.uploadSummary.review ?? 0}건`, delta: "확인 필요", previous: "오류 또는 경고 포함", icon: "", tone: "orange" }} />
           <MetricCardView card={{ label: "오류 행", value: `${dataQuality?.uploadSummary.errors ?? 0}건`, delta: "수정 필요", previous: "업로드 검수 결과", icon: "", tone: "violet" }} />
+        </div>
+      </section>
+
+      <section className="panel data-trust-panel">
+        <ChartHeader title="데이터 신뢰도 요약" right={<span className={`reconcile-status ${dataTrustSummary.missingLinks + dataTrustSummary.duplicates + dataTrustSummary.mismatches === 0 ? "pass" : "fail"}`}>{dataTrustSummary.missingLinks + dataTrustSummary.duplicates + dataTrustSummary.mismatches === 0 ? "검증 통과" : "확인 필요"}</span>} />
+        <div className="data-trust-grid">
+          <article><span>연결 원천</span><strong>{dataTrustSummary.connectedSources}/{dataTrustSummary.totalSources}</strong><small>문의·예약·내원·결제·광고비</small></article>
+          <article className={dataTrustSummary.missingLinks ? "trust-warning" : "trust-good"}><span>연결 누락</span><strong>{dataTrustSummary.missingLinks.toLocaleString("ko-KR")}건</strong><small>문의→예약→내원 관계</small></article>
+          <article className={dataTrustSummary.duplicates ? "trust-warning" : "trust-good"}><span>중복 행</span><strong>{dataTrustSummary.duplicates.toLocaleString("ko-KR")}건</strong><small>원천 식별키 기준</small></article>
+          <article className={dataTrustSummary.mismatches ? "trust-warning" : "trust-good"}><span>합계 불일치</span><strong>{dataTrustSummary.mismatches.toLocaleString("ko-KR")}개</strong><small>기간 합계 = 세부 합계</small></article>
         </div>
       </section>
 
