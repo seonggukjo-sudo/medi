@@ -50,10 +50,14 @@ type ReferralRow = {
 type UploadRow = {
   name: string;
   type: string;
+  dataset?: string;
+  periodStart?: string;
+  periodEnd?: string;
   status: string;
   updated: string;
   uploadedBy?: string;
   rowCount?: number;
+  errorCount?: number;
   warningCount?: number;
 };
 
@@ -342,7 +346,7 @@ type DataQuality = {
   overrides?: Array<DailyDataRow & { updatedAt?: string; updatedBy?: string }>;
   uploadSummary: { total: number; validated: number; review: number; errors: number };
   warnings: { missingLinks: number; duplicates: number };
-  uploads: Array<{ batchId: string; uploadedAt: string; uploadedBy?: string; status: string; rowCount: number; errorCount: number; warningCount: number }>;
+  uploads: Array<{ batchId: string; uploadedAt: string; uploadedBy?: string; status: string; rowCount: number; errorCount: number; warningCount: number; fileName?: string; tableKey?: ImportTableKey; periodStart?: string; periodEnd?: string }>;
   reconciliation: Array<{ metric: string; total: number; detailTotal: number; passed: boolean }>;
 };
 
@@ -953,7 +957,19 @@ export default function Home() {
           setDataQuality(body);
           const mergedDaily = new Map([...comparisonBody.daily, ...body.daily].map((row) => [row.date, row]));
           setDailyData(body.connected || comparisonBody.connected ? [...mergedDaily.values()].sort((a, b) => b.date.localeCompare(a.date)) : []);
-          setUploadedFiles(body.uploads.map((row) => ({ name: row.batchId.slice(0, 8), type: "CSV", status: row.status === "validated" ? "정상 반영" : row.status === "needs_review" ? "검수 대기" : "오류 확인", updated: new Date(row.uploadedAt).toLocaleString("ko-KR"), uploadedBy: row.uploadedBy ?? "-", rowCount: row.rowCount, warningCount: row.warningCount })));
+          setUploadedFiles(body.uploads.map((row) => ({
+            name: row.fileName || row.batchId.slice(0, 8),
+            type: row.fileName?.split(".").pop()?.toUpperCase() || "CSV",
+            dataset: importTables.find((table) => table.key === row.tableKey)?.label || row.tableKey || "데이터",
+            periodStart: row.periodStart,
+            periodEnd: row.periodEnd,
+            status: row.status === "validated" ? "정상 반영" : row.status === "needs_review" ? "검수 대기" : "오류 확인",
+            updated: new Date(row.uploadedAt).toLocaleString("ko-KR"),
+            uploadedBy: row.uploadedBy ?? "-",
+            rowCount: row.rowCount,
+            errorCount: row.errorCount,
+            warningCount: row.warningCount,
+          })));
           if (body.connected) setDataSourceState("live");
           setDataRefreshAt(new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date()));
         });
@@ -1299,8 +1315,9 @@ export default function Home() {
     const extension = file.name.split(".").pop()?.toUpperCase() || "CSV";
     setUploadedFiles((current) => [
       {
-        name: file.name.replace(/\.[^.]+$/, ""),
+        name: file.name,
         type: extension,
+        dataset: "검수 중",
         status: "검수 대기",
         updated: "방금 전",
       },
@@ -3637,19 +3654,23 @@ export default function Home() {
           <div className="data-table">
             <div className="table-head upload-table-head">
               <span>파일</span>
-              <span>형식</span>
+              <span>데이터</span>
+              <span>적용 기간</span>
               <span>업로드자</span>
               <span>행 수</span>
+              <span>검수</span>
               <span>상태</span>
               <span>업데이트</span>
             </div>
 
             {uploadedFiles.map((row) => (
               <div className="table-row upload-table-row" key={row.name}>
-                <b>{row.name}</b>
-                <span>{row.type}</span>
+                <b>{row.name}<small>{row.type}</small></b>
+                <span>{row.dataset ?? "데이터"}</span>
+                <span>{row.periodStart ? `${row.periodStart}${row.periodEnd && row.periodEnd !== row.periodStart ? ` ~ ${row.periodEnd}` : ""}` : "반영 전"}</span>
                 <span>{row.uploadedBy ?? "-"}</span>
-                <span>{row.rowCount?.toLocaleString("ko-KR") ?? "-"}{row.warningCount ? ` · 경고 ${row.warningCount}` : ""}</span>
+                <span>{row.rowCount?.toLocaleString("ko-KR") ?? "-"}</span>
+                <span className={row.errorCount ? "upload-issue error" : row.warningCount ? "upload-issue warning" : "upload-issue clean"}>{row.errorCount ? `오류 ${row.errorCount}` : row.warningCount ? `경고 ${row.warningCount}` : "이상 없음"}</span>
                 <span>
                   <i className={`status-dot ${row.status === "정상 반영" ? "good" : row.status === "검수 대기" ? "wait" : "bad"}`} />
                   {row.status}

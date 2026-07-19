@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const uploadRouteUrl = new URL("../app/api/uploads/route.ts", import.meta.url);
+const dataQualityRouteUrl = new URL("../app/api/data-quality/route.ts", import.meta.url);
 const pageUrl = new URL("../app/page.tsx", import.meta.url);
 const updateDocUrl = new URL("../outputs/메디인사이트_운영저장구조_마이그레이션_업데이트.md", import.meta.url);
 
@@ -29,6 +30,21 @@ test("서버 업로드 API는 업로드 이력을 조회하는 GET 경로를 제
   assert.match(source, /LEFT JOIN uploaded_files f/);
   assert.match(source, /WHERE b\.hospital_id = \?/);
   assert.match(source, /ORDER BY b\.uploaded_at DESC/);
+});
+
+test("데이터 관리 업로드 이력은 원본 파일과 실제 적용 기간을 표시한다", async () => {
+  const [qualitySource, pageSource] = await Promise.all([
+    readFile(dataQualityRouteUrl, "utf8"),
+    readFile(pageUrl, "utf8"),
+  ]);
+
+  assert.match(qualitySource, /f\.file_name AS fileName/);
+  assert.match(qualitySource, /f\.table_key AS tableKey/);
+  assert.match(qualitySource, /END AS periodStart/);
+  assert.match(qualitySource, /END AS periodEnd/);
+  assert.match(pageSource, /적용 기간/);
+  assert.match(pageSource, /이상 없음/);
+  assert.match(pageSource, /오류 \$\{row\.errorCount\}/);
 });
 
 test("업로드 화면과 운영 문서는 서버 저장 API 준비 상태를 안내한다", async () => {

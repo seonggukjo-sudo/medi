@@ -24,7 +24,35 @@ export async function GET(request: Request) {
       count("SELECT COUNT(DISTINCT visit_id) AS count FROM visits WHERE hospital_id = ? AND visited_at BETWEEN ? AND ? AND visit_id <> ''", start, end),
       count("SELECT COUNT(*) AS count, COALESCE(SUM(net_amount), 0) AS amount FROM payments WHERE hospital_id = ? AND paid_at BETWEEN ? AND ?", start, end),
       count("SELECT COUNT(*) AS count, COALESCE(SUM(cost), 0) AS amount FROM ad_spend WHERE hospital_id = ? AND spend_date BETWEEN ? AND ?", start, end),
-      env.DB.prepare("SELECT batch_id AS batchId, uploaded_by AS uploadedBy, uploaded_at AS uploadedAt, status, row_count AS rowCount, error_count AS errorCount, warning_count AS warningCount FROM upload_batches WHERE hospital_id = ? ORDER BY uploaded_at DESC LIMIT 20").bind(hospitalId).all(),
+      env.DB.prepare(`SELECT
+        b.batch_id AS batchId,
+        b.uploaded_by AS uploadedBy,
+        b.uploaded_at AS uploadedAt,
+        b.status,
+        b.row_count AS rowCount,
+        b.error_count AS errorCount,
+        b.warning_count AS warningCount,
+        f.file_name AS fileName,
+        f.table_key AS tableKey,
+        CASE f.table_key
+          WHEN 'leads' THEN (SELECT MIN(substr(received_at, 1, 10)) FROM leads WHERE batch_id = b.batch_id)
+          WHEN 'appointments' THEN (SELECT MIN(substr(booked_at, 1, 10)) FROM appointments WHERE batch_id = b.batch_id)
+          WHEN 'visits' THEN (SELECT MIN(substr(visited_at, 1, 10)) FROM visits WHERE batch_id = b.batch_id)
+          WHEN 'payments' THEN (SELECT MIN(substr(paid_at, 1, 10)) FROM payments WHERE batch_id = b.batch_id)
+          WHEN 'ad_spend' THEN (SELECT MIN(substr(spend_date, 1, 10)) FROM ad_spend WHERE batch_id = b.batch_id)
+        END AS periodStart,
+        CASE f.table_key
+          WHEN 'leads' THEN (SELECT MAX(substr(received_at, 1, 10)) FROM leads WHERE batch_id = b.batch_id)
+          WHEN 'appointments' THEN (SELECT MAX(substr(booked_at, 1, 10)) FROM appointments WHERE batch_id = b.batch_id)
+          WHEN 'visits' THEN (SELECT MAX(substr(visited_at, 1, 10)) FROM visits WHERE batch_id = b.batch_id)
+          WHEN 'payments' THEN (SELECT MAX(substr(paid_at, 1, 10)) FROM payments WHERE batch_id = b.batch_id)
+          WHEN 'ad_spend' THEN (SELECT MAX(substr(spend_date, 1, 10)) FROM ad_spend WHERE batch_id = b.batch_id)
+        END AS periodEnd
+      FROM upload_batches b
+      LEFT JOIN uploaded_files f ON f.batch_id = b.batch_id
+      WHERE b.hospital_id = ?
+      ORDER BY b.uploaded_at DESC
+      LIMIT 20`).bind(hospitalId).all(),
       env.DB.prepare("SELECT (SELECT COUNT(*) FROM appointments a LEFT JOIN leads l ON l.hospital_id = a.hospital_id AND l.lead_id = a.lead_id WHERE a.hospital_id = ? AND a.lead_id <> '' AND l.lead_id IS NULL) + (SELECT COUNT(*) FROM visits v LEFT JOIN appointments a ON a.hospital_id = v.hospital_id AND a.appointment_id = v.appointment_id WHERE v.hospital_id = ? AND v.appointment_id <> '' AND a.appointment_id IS NULL) AS count").bind(hospitalId, hospitalId).first<CountRow>(),
       env.DB.prepare("SELECT COALESCE(SUM(warning_count), 0) AS count FROM upload_batches WHERE hospital_id = ?").bind(hospitalId).first<CountRow>(),
       loadDailyMetricOverrides(env.DB, hospitalId, start, end),

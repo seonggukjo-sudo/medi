@@ -1320,8 +1320,47 @@ button {
 
 .upload-table-head,
 .upload-table-row {
-  grid-template-columns: 1.15fr 0.7fr 1fr 0.8fr 0.95fr 1.1fr;
-  min-width: 100%;
+  grid-template-columns: minmax(170px, 1.4fr) minmax(105px, 0.8fr) minmax(170px, 1.2fr) minmax(130px, 1fr) minmax(70px, 0.55fr) minmax(90px, 0.7fr) minmax(95px, 0.75fr) minmax(145px, 1fr);
+  min-width: 1040px;
+}
+
+.upload-table-row > b {
+  display: grid;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+
+.upload-table-row > b small {
+  color: #8b97a8;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.upload-issue {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.upload-issue.clean {
+  color: #17765b;
+  background: #eaf7f2;
+}
+
+.upload-issue.warning {
+  color: #9b650e;
+  background: #fff4d9;
+}
+
+.upload-issue.error {
+  color: #b84542;
+  background: #ffeded;
 }
 
 .permissions-head,
