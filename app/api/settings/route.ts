@@ -36,7 +36,7 @@ export async function GET(request: Request) {
         .bind(hospitalId).first<{ settingsJson: string; updatedAt: string }>(),
       env.DB.prepare("SELECT email, name, role, last_login_at AS lastLoginAt FROM users WHERE hospital_id = ? AND status = 'active' ORDER BY created_at")
         .bind(hospitalId).all(),
-      env.DB.prepare("SELECT user_id AS userId, action, created_at AS createdAt, metadata_json AS metadataJson FROM audit_logs WHERE hospital_id = ? AND target_type IN ('settings', 'users') ORDER BY created_at DESC LIMIT 20")
+      env.DB.prepare("SELECT user_id AS userId, action, target_id AS targetId, created_at AS createdAt, metadata_json AS metadataJson FROM audit_logs WHERE hospital_id = ? AND target_type IN ('settings', 'users') ORDER BY created_at DESC LIMIT 30")
         .bind(hospitalId).all(),
     ]);
 
@@ -96,6 +96,13 @@ export async function POST(request: Request) {
       else normalizedUsers.push({ email: access.email, name: access.name, role: "owner" });
     }
 
+    const existingResult = await env.DB.prepare("SELECT email, name, role, last_login_at AS lastLoginAt, created_at AS createdAt FROM users WHERE hospital_id = ? AND status = 'active'")
+      .bind(hospitalId)
+      .all();
+    const existingUsers = existingResult.results as Array<{ email: string; name: string; role: DashboardRole; lastLoginAt: string | null; createdAt: string }>;
+    const existingByEmail = new Map(existingUsers.map((user) => [user.email.toLowerCase(), user]));
+    const nextByEmail = new Map(normalizedUsers.map((user) => [user.email, user]));
+
     const now = new Date().toISOString();
     const statements = [
       env.DB.prepare("INSERT OR IGNORE INTO hospitals (hospital_id, name, timezone, status, created_at) VALUES (?, ?, 'Asia/Seoul', 'active', ?)")
@@ -106,8 +113,19 @@ export async function POST(request: Request) {
     ];
 
     for (const user of normalizedUsers) {
+      const existing = existingByEmail.get(user.email);
       statements.push(env.DB.prepare("INSERT INTO users (user_id, hospital_id, email, name, role, status, last_login_at, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)")
-        .bind(`${hospitalId}:${user.email}`, hospitalId, user.email, user.name, user.role, user.email === access.email ? now : null, now));
+        .bind(`${hospitalId}:${user.email}`, hospitalId, user.email, user.name, user.role, user.email === access.email ? now : existing?.lastLoginAt ?? null, existing?.createdAt ?? now));
+      const action = !existing ? "user_added" : existing.role !== user.role ? "user_role_changed" : existing.name !== user.name ? "user_profile_changed" : null;
+      if (action) {
+        statements.push(env.DB.prepare("INSERT INTO audit_logs (log_id, hospital_id, user_id, action, target_type, target_id, created_at, metadata_json) VALUES (?, ?, ?, ?, 'users', ?, ?, ?)")
+          .bind(crypto.randomUUID(), hospitalId, access.email, action, user.email, now, JSON.stringify({ email: user.email, name: user.name, beforeRole: existing ? roleLabels[existing.role] : null, afterRole: roleLabels[user.role] })));
+      }
+    }
+    for (const existing of existingUsers) {
+      if (nextByEmail.has(existing.email.toLowerCase())) continue;
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (log_id, hospital_id, user_id, action, target_type, target_id, created_at, metadata_json) VALUES (?, ?, ?, 'user_removed', 'users', ?, ?, ?)")
+        .bind(crypto.randomUUID(), hospitalId, access.email, existing.email, now, JSON.stringify({ email: existing.email, name: existing.name, beforeRole: roleLabels[existing.role], afterRole: null })));
     }
     statements.push(env.DB.prepare("INSERT INTO audit_logs (log_id, hospital_id, user_id, action, target_type, target_id, created_at, metadata_json) VALUES (?, ?, ?, 'settings_saved', 'settings', ?, ?, ?)")
       .bind(crypto.randomUUID(), hospitalId, access.email, hospitalId, now, JSON.stringify({ userCount: normalizedUsers.length, ownerCount: normalizedUsers.filter((user) => user.role === "owner").length, changedByRole: access.role })));

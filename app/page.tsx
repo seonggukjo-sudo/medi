@@ -351,7 +351,21 @@ type DataQuality = {
   reconciliation: Array<{ metric: string; total: number; detailTotal: number; passed: boolean }>;
 };
 
-type SettingsHistoryRow = { userId: string; action: string; createdAt: string; metadata?: { userCount?: number } };
+type SettingsHistoryRow = {
+  userId: string;
+  action: string;
+  targetId?: string;
+  createdAt: string;
+  metadata?: { userCount?: number; ownerCount?: number; email?: string; name?: string; beforeRole?: string | null; afterRole?: string | null };
+};
+
+const settingsActionLabels: Record<string, string> = {
+  settings_saved: "설정 저장",
+  user_added: "사용자 추가",
+  user_removed: "사용자 삭제",
+  user_role_changed: "권한 변경",
+  user_profile_changed: "사용자 정보 변경",
+};
 
 const initialKpiTargets: KpiTargetRow[] = [
   { metric: "예약률", hospital: "18%", department: "교통사고 20%", channel: "네이버 19%" },
@@ -4111,8 +4125,17 @@ export default function Home() {
         <ChartHeader title="설정 변경 이력" />
         <p className="table-helper">누가 언제 설정과 권한을 변경했는지 서버 감사 로그로 보존합니다.</p>
         <div className="data-table">
-          <div className="table-head settings-history-head"><span>일시</span><span>사용자</span><span>작업</span><span>대상 사용자</span></div>
-          {settingsHistory.map((row) => <div className="table-row settings-history-row" key={`${row.createdAt}-${row.userId}`}><span>{new Date(row.createdAt).toLocaleString("ko-KR")}</span><b>{row.userId}</b><span>설정·권한 저장</span><strong>{row.metadata?.userCount ?? "-"}명</strong></div>)}
+          <div className="table-head settings-history-head"><span>일시</span><span>작업자</span><span>변경 내용</span><span>대상·결과</span></div>
+          {settingsHistory.map((row, index) => (
+            <div className="table-row settings-history-row" key={`${row.createdAt}-${row.action}-${row.targetId ?? index}`}>
+              <span>{new Date(row.createdAt).toLocaleString("ko-KR")}</span>
+              <b>{row.userId}</b>
+              <span>{settingsActionLabels[row.action] ?? row.action}</span>
+              <strong>{row.metadata?.email
+                ? `${row.metadata.email}${row.metadata.beforeRole !== row.metadata.afterRole ? ` · ${row.metadata.beforeRole ?? "신규"} → ${row.metadata.afterRole ?? "삭제"}` : ""}`
+                : row.metadata?.userCount !== undefined ? `사용자 ${row.metadata.userCount}명 · 최고관리자 ${row.metadata.ownerCount ?? "-"}명` : row.targetId ?? "-"}</strong>
+            </div>
+          ))}
           {settingsHistory.length === 0 ? <div className="data-empty-row">아직 저장된 변경 이력이 없습니다.</div> : null}
         </div>
       </section>
