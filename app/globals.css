@@ -1369,8 +1369,8 @@ button {
 
 .daily-history-head,
 .daily-history-row {
-  grid-template-columns: minmax(100px, 0.8fr) minmax(130px, 1fr) minmax(155px, 1.15fr) repeat(3, minmax(70px, 0.55fr)) repeat(2, minmax(105px, 0.8fr));
-  min-width: 900px;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(130px, 1fr) minmax(155px, 1.15fr) repeat(3, minmax(70px, 0.55fr)) repeat(2, minmax(105px, 0.8fr)) minmax(96px, 0.7fr);
+  min-width: 1010px;
 }
 
 .daily-history-row > span:nth-child(n + 4) {
@@ -1380,6 +1380,32 @@ button {
 .daily-history-row > span:nth-last-child(-n + 2) {
   color: #216b57;
   font-weight: 700;
+}
+
+.history-restore-button {
+  width: fit-content;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #bcdad0;
+  border-radius: 8px;
+  background: #eff8f5;
+  color: #176c55;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.history-restore-button:hover,
+.history-restore-button:focus-visible {
+  border-color: #4b9a82;
+  background: #e2f3ed;
+  outline: none;
+}
+
+.history-readonly {
+  color: #8b97a8 !important;
+  font-size: 10px;
 }
 
 .permissions-head,
