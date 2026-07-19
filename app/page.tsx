@@ -3987,6 +3987,7 @@ export default function Home() {
                   key={item.key}
                   type="button"
                   className={activeMenu === item.key ? "nav-item active" : "nav-item"}
+                  aria-current={activeMenu === item.key ? "page" : undefined}
                   onClick={() => setActiveMenu(item.key)}
                 >
                   {item.label}

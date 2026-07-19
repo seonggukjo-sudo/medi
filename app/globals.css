@@ -4982,3 +4982,439 @@ body {
     animation: none;
   }
 }
+
+/* Mobile operating layout: prioritize period controls, KPIs, then detail data. */
+@media (max-width: 700px) {
+  html {
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  button,
+  select,
+  input {
+    touch-action: manipulation;
+  }
+
+  .dashboard-shell,
+  .dashboard-main,
+  .page,
+  .panel,
+  .kpi-panel {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    gap: 8px;
+    padding: max(10px, env(safe-area-inset-top)) 12px 9px;
+    border-bottom: 1px solid #e6eaf0;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(16px);
+  }
+
+  .brand {
+    min-height: 36px;
+    padding: 0 2px 5px;
+  }
+
+  .brand-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+
+  .brand strong { font-size: 14px; }
+  .brand span { display: none; }
+
+  .sidebar-nav {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    margin: 0;
+    padding: 0 0 3px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .sidebar-nav::-webkit-scrollbar { display: none; }
+  .sidebar-group { display: contents; }
+  .sidebar-group-label,
+  .sidebar-footer { display: none; }
+
+  .nav-item {
+    min-height: 38px;
+    flex: 0 0 auto;
+    padding: 0 13px;
+    border: 1px solid #e8ebf0;
+    border-radius: 10px;
+    color: #667186;
+    background: #f8f9fb;
+    font-size: 11px;
+    font-weight: 760;
+    white-space: nowrap;
+    scroll-snap-align: start;
+  }
+
+  .nav-item:hover,
+  .nav-item.active {
+    border-color: #cddcf5;
+    color: #245fae;
+    background: #eaf2ff;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .topbar {
+    position: relative;
+    display: grid;
+    gap: 9px;
+    min-height: 0;
+    padding: 10px 12px 12px;
+    background: #fff;
+  }
+
+  .topbar-left,
+  .topbar-center,
+  .topbar-right {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .topbar-left {
+    overflow: hidden;
+  }
+
+  .common-period-strip {
+    display: flex;
+    width: 100%;
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .common-period-strip::-webkit-scrollbar { display: none; }
+
+  .period-strip-item,
+  .period-strip-status {
+    min-height: 30px;
+    flex: 0 0 auto;
+    padding: 5px 8px;
+    border-radius: 8px;
+    font-size: 9px;
+  }
+
+  .topbar-center {
+    display: flex;
+    min-height: 18px;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .topbar-center::-webkit-scrollbar { display: none; }
+  .external-sync-label,
+  .data-refresh-label { flex: 0 0 auto; font-size: 9px; }
+
+  .topbar-right {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 42px;
+    gap: 7px;
+  }
+
+  .topbar-right > .range-select:first-child {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .topbar-right > .compare-pill {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .topbar-right > .range-detail-select,
+  .topbar-right > .custom-date-range {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .topbar-right > .profile-button {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .range-pill,
+  .profile-button {
+    min-width: 0;
+    width: 100%;
+    height: 42px;
+    border-radius: 10px;
+  }
+
+  .range-select select {
+    min-width: 0;
+    width: 100%;
+    padding-left: 10px;
+    font-size: 10px;
+    text-overflow: ellipsis;
+  }
+
+  .custom-date-range {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    width: 100%;
+    height: auto;
+    min-height: 44px;
+    padding: 5px 8px;
+  }
+
+  .custom-date-range input {
+    min-width: 0;
+    width: 100%;
+    height: 34px;
+    padding: 0 4px;
+    font-size: 10px;
+  }
+
+  .login-panel {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    margin: 10px 12px 0;
+    padding: 15px;
+  }
+
+  .account-session-actions {
+    width: 100%;
+  }
+
+  .account-session-actions > * {
+    min-height: 42px;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .page {
+    padding: 14px 10px calc(26px + env(safe-area-inset-bottom));
+  }
+
+  .hero-row {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .hero-row h1 {
+    font-size: clamp(21px, 7vw, 28px);
+    line-height: 1.15;
+  }
+
+  .hero-row p {
+    max-width: 100%;
+    font-size: 11px;
+    line-height: 1.55;
+  }
+
+  .hero-row .primary-button {
+    width: 100%;
+  }
+
+  .panel,
+  .kpi-panel,
+  .ai-panel,
+  .place-rank-panel {
+    padding: 13px;
+    border-radius: 13px;
+  }
+
+  .page .kpi-grid,
+  .page .ads-kpi-grid,
+  .page > .kpi-panel:has(+ .ai-panel) .kpi-grid,
+  .ga4-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .kpi-card,
+  .ads-kpi-grid .kpi-card {
+    min-height: 112px;
+    padding: 11px;
+    border-radius: 11px;
+  }
+
+  .kpi-card strong,
+  .ads-kpi-grid .kpi-card strong {
+    font-size: clamp(19px, 6.2vw, 25px);
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+  }
+
+  .kpi-card span,
+  .kpi-card small,
+  .kpi-card b { font-size: 9px; }
+
+  .chart-grid,
+  .kpi-decision-grid,
+  .consult-detail-grid,
+  .consult-secondary-grid,
+  .consult-layout-grid,
+  .ga4-detail-grid,
+  .ga4-connect-panel,
+  .settings-grid,
+  .settings-management-grid,
+  .ads-efficiency-grid,
+  .ads-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ai-head,
+  .ai-body,
+  .ai-footer,
+  .panel-head,
+  .ga4-status-row,
+  .place-rank-status-row,
+  .place-rank-detail-head,
+  .rankfree-analysis-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ai-head { gap: 8px; padding: 13px; }
+  .ai-head h2 { font-size: 16px; }
+  .ai-head-right { text-align: left; }
+  .ai-body { padding: 13px; }
+  .ai-actions { padding-top: 12px; }
+
+  .panel-head {
+    display: flex;
+    gap: 8px;
+  }
+
+  .panel-head > div:last-child,
+  .data-table-actions {
+    width: 100%;
+  }
+
+  .data-table-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .data-table-actions .save-data-button {
+    grid-column: 1 / -1;
+  }
+
+  .data-table,
+  .naver-trend-card,
+  .place-rank-chart,
+  .rankfree-monthly-trend {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .table-head,
+  .table-row,
+  .table-total-row {
+    min-width: max-content;
+  }
+
+  .place-rank-register,
+  .place-rank-summary-grid,
+  .place-rank-provider-grid,
+  .rankfree-analysis-grid,
+  .account-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .place-rank-keyword-grid {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .place-rank-keyword-grid::-webkit-scrollbar { display: none; }
+
+  .place-rank-keyword-card {
+    min-width: min(78vw, 280px);
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+
+  .place-rank-actions,
+  .place-rank-manual {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .place-rank-actions > *,
+  .place-rank-manual > * {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .place-rank-manual span {
+    grid-column: 1 / -1;
+  }
+
+  .place-rank-manual input {
+    height: 42px;
+  }
+
+  .primary-button,
+  button.pill,
+  a.pill,
+  .table-filter select {
+    min-height: 40px;
+  }
+
+  .reconciliation-alert,
+  .data-warning {
+    font-size: 10px;
+    line-height: 1.5;
+  }
+}
+
+@media (max-width: 380px) {
+  .page .kpi-grid,
+  .page .ads-kpi-grid,
+  .page > .kpi-panel:has(+ .ai-panel) .kpi-grid,
+  .ga4-kpi-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .topbar-right {
+    grid-template-columns: minmax(0, 1fr) 42px;
+  }
+
+  .topbar-right > .range-select:first-child { grid-column: 1; }
+  .topbar-right > .profile-button { grid-column: 2; }
+  .topbar-right > .compare-pill {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .topbar-right > .range-detail-select,
+  .topbar-right > .custom-date-range {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+}
