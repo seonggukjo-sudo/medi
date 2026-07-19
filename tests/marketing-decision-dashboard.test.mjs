@@ -74,3 +74,18 @@ test("KPI 카드는 계산 근거와 원천 데이터 이동 경로를 제공한
   assert.match(css, /\.kpi-detail-dialog/);
   assert.match(css, /@media \(max-width: 640px\)/);
 });
+
+test("설정에서 외부 연동 상태와 실제 성공 기록을 통합 관리한다", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(page, /외부 데이터 연동 상태/);
+  assert.match(page, /GA4 Data API/);
+  assert.match(page, /네이버 검색광고/);
+  assert.match(page, /플레이스 자연 노출 순위/);
+  assert.match(page, /마지막 성공/);
+  assert.match(page, /성공 기록 없음/);
+  assert.match(page, /지금 새로고침/);
+  assert.doesNotMatch(page, /<strong>오늘 12:54<\/strong>/);
+  assert.match(css, /\.integration-health-grid/);
+  assert.match(css, /\.integration-state\.partial/);
+});

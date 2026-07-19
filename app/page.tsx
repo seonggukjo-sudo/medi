@@ -3880,6 +3880,48 @@ export default function Home() {
     </>
   );
 
+  const integrationHealthRows = [
+    {
+      key: "ga4",
+      name: "GA4 Data API",
+      description: "웹 유입·랜딩페이지·전환 이벤트",
+      state: ga4LoadState === "loading" ? "loading" : ga4LoadState === "error" ? "error" : ga4Data?.warnings?.length ? "partial" : "live",
+      status: ga4LoadState === "loading" ? "조회 중" : ga4LoadState === "error" ? "오류" : ga4Data?.warnings?.length ? "부분 연동" : "정상 연동",
+      lastSuccess: ga4LastSyncedAt || "성공 기록 없음",
+      cadence: ga4Automation ? "5분 주기 · 화면 복귀 시 즉시" : "자동 갱신 중지",
+      message: ga4LoadMessage,
+      refresh: () => setGa4RefreshKey((value) => value + 1),
+      refreshing: ga4LoadState === "loading",
+    },
+    {
+      key: "naver-search-ads",
+      name: "네이버 검색광고",
+      description: "검색광고·플레이스 광고 원천 지표",
+      state: naverSearchAdLoadState === "loading" ? "loading" : naverSearchAdLoadState === "error" ? "error" : "live",
+      status: naverSearchAdLoadState === "loading" ? "조회 중" : naverSearchAdLoadState === "error" ? "오류" : "정상 연동",
+      lastSuccess: naverSearchAdLastSyncedAt || "성공 기록 없음",
+      cadence: "5분 주기 · 화면 복귀 시 즉시",
+      message: naverSearchAdMessage,
+      refresh: () => setNaverSearchAdRefreshKey((value) => value + 1),
+      refreshing: naverSearchAdLoadState === "loading",
+    },
+    {
+      key: "place-rank",
+      name: "플레이스 자연 노출 순위",
+      description: "광고 제외 키워드별 자연 노출 순위",
+      state: placeRankLoadState === "loading" ? "loading" : placeRankLoadState === "error" ? "error" : !placeRankData?.providerConfigured ? "disconnected" : placeRankData.trackingSync?.error ? "partial" : "live",
+      status: placeRankLoadState === "loading" ? "조회 중" : placeRankLoadState === "error" ? "오류" : !placeRankData?.providerConfigured ? "미설정" : placeRankData.trackingSync?.error ? "부분 연동" : "정상 연동",
+      lastSuccess: placeRankData?.syncedAt ? formatPlaceRankCheckedAt(placeRankData.syncedAt) : "성공 기록 없음",
+      cadence: placeRankData?.providerConfigured ? "매일 09:00 · 수동 측정 지원" : "자동 측정 중지",
+      message: placeRankMessage,
+      refresh: () => setPlaceRankRefreshKey((value) => value + 1),
+      refreshing: placeRankLoadState === "loading",
+    },
+  ];
+  const latestIntegrationSuccess = placeRankData?.syncedAt
+    ? formatPlaceRankCheckedAt(placeRankData.syncedAt)
+    : naverSearchAdLastSyncedAt || ga4LastSyncedAt || "성공 기록 없음";
+
   const renderSettings = () => (
     <>
       <section className="panel settings-hero">
@@ -3909,8 +3951,8 @@ export default function Home() {
           </article>
           <article className="settings-stat">
             <span>최근 동기화</span>
-            <strong>오늘 12:54</strong>
-            <small>데이터와 권한 상태를 함께 표시</small>
+            <strong>{latestIntegrationSuccess}</strong>
+            <small>외부 연동의 실제 성공 기록</small>
           </article>
         </div>
       </section>
@@ -4031,6 +4073,29 @@ export default function Home() {
           <label className="setting-row"><span>이상 변화 감지</span><select className="setting-input" value={aiSettings.anomaly} onChange={(event) => { setAiSettings((current) => ({ ...current, anomaly: event.target.value })); setIsSettingsDirty(true); }}><option>5% 이상</option><option>10% 이상</option><option>15% 이상</option><option>20% 이상</option></select></label>
           <label className="setting-row"><span>추천 표시 수준</span><select className="setting-input" value={aiSettings.recommendation} onChange={(event) => { setAiSettings((current) => ({ ...current, recommendation: event.target.value })); setIsSettingsDirty(true); }}><option>핵심 3개</option><option>상세 5개</option><option>전체 추천</option></select></label>
           <div className="setting-row"><span>GA4 자동 분석</span><button type="button" className={`toggle ${ga4Automation ? "on" : ""}`} aria-pressed={ga4Automation} onClick={() => { setGa4Automation((enabled) => !enabled); setIsSettingsDirty(true); }} /></div>
+        </div>
+      </section>
+      <section className="panel integration-health-panel">
+        <ChartHeader title="외부 데이터 연동 상태" right={<span className="chart-period-note">선택 기간 · {periodDefinition.range}</span>} />
+        <p className="table-helper">GA4, 네이버 광고, 플레이스 순위의 마지막 성공 시각과 오류 상태를 한곳에서 확인합니다. 오류가 발생해도 임의 수치로 대체하지 않습니다.</p>
+        <div className="integration-health-grid">
+          {integrationHealthRows.map((integration) => (
+            <article className={`integration-health-card ${integration.state}`} key={integration.key}>
+              <div className="integration-health-head">
+                <div>
+                  <span>{integration.description}</span>
+                  <h3>{integration.name}</h3>
+                </div>
+                <strong className={`integration-state ${integration.state}`}>{integration.status}</strong>
+              </div>
+              <dl>
+                <div><dt>마지막 성공</dt><dd>{integration.lastSuccess}</dd></div>
+                <div><dt>자동 갱신</dt><dd>{integration.cadence}</dd></div>
+              </dl>
+              <p>{integration.message}</p>
+              <button className="pill integration-refresh-button" type="button" disabled={integration.refreshing} onClick={integration.refresh}>{integration.refreshing ? "새로고침 중" : "지금 새로고침"}</button>
+            </article>
+          ))}
         </div>
       </section>
       <section className="panel ga4-connect-panel settings-ga4-connect-panel">
