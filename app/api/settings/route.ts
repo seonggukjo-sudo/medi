@@ -77,6 +77,25 @@ export async function POST(request: Request) {
     const body = await request.json() as { settings?: Record<string, unknown>; users?: Array<{ email?: string; name?: string; role?: string }> };
     if (!body.settings || !Array.isArray(body.users)) return Response.json({ error: "저장할 설정 형식이 올바르지 않습니다." }, { status: 400 });
 
+    const normalizedUsers: Array<{ email: string; name: string; role: DashboardRole }> = [];
+    const seenEmails = new Set<string>();
+    for (const user of body.users) {
+      const email = String(user.email || "").trim().toLowerCase();
+      const role = roleByLabel[String(user.role)];
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return Response.json({ error: "사용자 이메일 형식을 확인해 주세요." }, { status: 400 });
+      if (seenEmails.has(email)) return Response.json({ error: `중복 사용자 이메일이 있습니다: ${email}` }, { status: 400 });
+      if (!role) return Response.json({ error: `${email} 사용자의 권한 값이 올바르지 않습니다.` }, { status: 400 });
+      seenEmails.add(email);
+      normalizedUsers.push({ email, name: String(user.name || email.split("@")[0]).trim(), role });
+    }
+    if (normalizedUsers.length === 0) return Response.json({ error: "최소 1명의 사용자가 필요합니다." }, { status: 400 });
+    if (!normalizedUsers.some((user) => user.role === "owner")) {
+      if (access.role !== "owner") return Response.json({ error: "최고관리자를 최소 1명 유지해야 합니다." }, { status: 400 });
+      const currentUser = normalizedUsers.find((user) => user.email === access.email);
+      if (currentUser) currentUser.role = "owner";
+      else normalizedUsers.push({ email: access.email, name: access.name, role: "owner" });
+    }
+
     const now = new Date().toISOString();
     const statements = [
       env.DB.prepare("INSERT OR IGNORE INTO hospitals (hospital_id, name, timezone, status, created_at) VALUES (?, ?, 'Asia/Seoul', 'active', ?)")
@@ -86,22 +105,15 @@ export async function POST(request: Request) {
       env.DB.prepare("DELETE FROM users WHERE hospital_id = ?").bind(hospitalId),
     ];
 
-    for (const user of body.users) {
-      const email = String(user.email || "").trim().toLowerCase();
-      if (!email || !email.includes("@")) continue;
-      const role = roleByLabel[String(user.role)] || "viewer";
+    for (const user of normalizedUsers) {
       statements.push(env.DB.prepare("INSERT INTO users (user_id, hospital_id, email, name, role, status, last_login_at, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)")
-        .bind(`${hospitalId}:${email}`, hospitalId, email, String(user.name || email.split("@")[0]), role, email === access.email ? now : null, now));
-    }
-    if (!body.users.some((user) => String(user.email || "").trim().toLowerCase() === access.email)) {
-      statements.push(env.DB.prepare("INSERT INTO users (user_id, hospital_id, email, name, role, status, last_login_at, created_at) VALUES (?, ?, ?, ?, 'owner', 'active', ?, ?)")
-        .bind(`${hospitalId}:${access.email}`, hospitalId, access.email, access.name, now, now));
+        .bind(`${hospitalId}:${user.email}`, hospitalId, user.email, user.name, user.role, user.email === access.email ? now : null, now));
     }
     statements.push(env.DB.prepare("INSERT INTO audit_logs (log_id, hospital_id, user_id, action, target_type, target_id, created_at, metadata_json) VALUES (?, ?, ?, 'settings_saved', 'settings', ?, ?, ?)")
-      .bind(crypto.randomUUID(), hospitalId, access.email, hospitalId, now, JSON.stringify({ userCount: body.users.length, changedByRole: access.role })));
+      .bind(crypto.randomUUID(), hospitalId, access.email, hospitalId, now, JSON.stringify({ userCount: normalizedUsers.length, ownerCount: normalizedUsers.filter((user) => user.role === "owner").length, changedByRole: access.role })));
 
     await env.DB.batch(statements);
-    return Response.json({ saved: true, updatedAt: now });
+    return Response.json({ saved: true, updatedAt: now, userCount: normalizedUsers.length });
   } catch (error) {
     return accessErrorResponse(error, "설정을 저장하지 못했습니다.");
   }

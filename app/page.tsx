@@ -1339,8 +1339,25 @@ export default function Home() {
     setValidationResults(`${customStartDate} ~ ${customEndDate} 업로드 데이터를 조회합니다.`);
   };
 
+  const normalizedUserEmails = users.map((user) => user.email.trim().toLowerCase());
+  const duplicateUserEmail = normalizedUserEmails.find((email, index) => email && normalizedUserEmails.indexOf(email) !== index);
+  const invalidUser = users.find((user) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email.trim()) || !user.name.trim());
+  const userAccessValidation = users.length === 0
+    ? "최소 1명의 사용자가 필요합니다."
+    : invalidUser
+      ? "모든 사용자의 이름과 올바른 이메일을 입력해 주세요."
+      : duplicateUserEmail
+        ? `중복 사용자 이메일이 있습니다: ${duplicateUserEmail}`
+        : !users.some((user) => user.role === "최고관리자")
+          ? "최고관리자를 최소 1명 유지해야 합니다."
+          : "";
+
   const saveSettings = async () => {
     if (!canManageSettings) return;
+    if (userAccessValidation) {
+      setValidationResults(userAccessValidation);
+      return;
+    }
     setSettingsSaveState("saving");
     try {
       const response = await fetch("/api/settings", {
@@ -3966,7 +3983,7 @@ export default function Home() {
               ? " 로그인 상태에서는 바로 변경과 확인을 이어서 볼 수 있습니다."
               : " 로그인하면 같은 화면에서 바로 수정 흐름으로 이어집니다."}
           </p>
-          <button className="primary-button settings-save-button" type="button" disabled={!isSettingsDirty || !canManageSettings || settingsSaveState === "saving"} onClick={saveSettings}>{settingsSaveState === "saving" ? "저장 중" : "설정 저장"}</button>
+          <button className="primary-button settings-save-button" type="button" disabled={!isSettingsDirty || !canManageSettings || Boolean(userAccessValidation) || settingsSaveState === "saving"} onClick={saveSettings}>{settingsSaveState === "saving" ? "저장 중" : "설정 저장"}</button>
           {!canManageSettings ? <p className="permission-note">현재 권한({accessRole})은 설정 조회만 가능합니다.</p> : null}
         </div>
 
@@ -4050,19 +4067,23 @@ export default function Home() {
       </section>
 
       <section className="panel table-panel settings-management-panel">
-        <ChartHeader title="사용자 · 권한 관리" />
+        <ChartHeader title="사용자 · 권한 관리" right={<button className="pill" type="button" disabled={!canManageSettings} onClick={() => { setUsers((current) => [...current, { email: "", name: "", organization: hospitalLocation, role: "조회 전용", recentAccess: "접속 기록 없음" }]); setIsSettingsDirty(true); }}>사용자 추가</button>} />
         <p className="table-helper">서버가 로그인 이메일과 저장된 역할을 대조합니다. 설정은 최고관리자·병원 관리자, 데이터 관리는 마케팅 이상만 변경할 수 있습니다.</p>
+        {userAccessValidation ? <p className="user-access-validation" role="alert">{userAccessValidation}</p> : <p className="user-access-validation pass">권한 구성 정상 · 최고관리자 {users.filter((user) => user.role === "최고관리자").length}명</p>}
         <div className="data-table">
-          <div className="table-head user-access-head"><span>이메일</span><span>이름</span><span>소속</span><span>권한</span><span>최근 접속</span></div>
+          <div className="table-head user-access-head"><span>이메일</span><span>이름</span><span>소속</span><span>권한</span><span>최근 접속</span><span>작업</span></div>
           {users.map((user, index) => (
             <div className="table-row user-access-row" key={`${user.email}-${index}`}>
-              <input disabled={!canManageSettings} value={user.email} aria-label={`${index + 1}번 사용자 이메일`} onChange={(event) => { setUsers((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, email: event.target.value } : item)); setIsSettingsDirty(true); }} />
+              <input disabled={!canManageSettings || user.email.trim().toLowerCase() === loginEmail.trim().toLowerCase()} value={user.email} aria-label={`${index + 1}번 사용자 이메일`} onChange={(event) => { setUsers((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, email: event.target.value } : item)); setIsSettingsDirty(true); }} />
               <input disabled={!canManageSettings} value={user.name} aria-label={`${index + 1}번 사용자 이름`} onChange={(event) => { setUsers((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item)); setIsSettingsDirty(true); }} />
               <input disabled={!canManageSettings} value={user.organization} aria-label={`${user.name} 소속`} onChange={(event) => { setUsers((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, organization: event.target.value } : item)); setIsSettingsDirty(true); }} />
               <select disabled={!canManageSettings} value={user.role} aria-label={`${user.name} 권한`} onChange={(event) => { setUsers((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, role: event.target.value as UserAccessRow["role"] } : item)); setIsSettingsDirty(true); }}>
                 {(["최고관리자", "병원 관리자", "마케팅", "상담", "조회 전용"] as const).map((role) => <option key={role}>{role}</option>)}
               </select>
               <span>{user.recentAccess}</span>
+              {user.email.trim().toLowerCase() === loginEmail.trim().toLowerCase()
+                ? <span className="current-user-label">현재 계정</span>
+                : <button className="user-remove-button" type="button" disabled={!canManageSettings} onClick={() => { setUsers((current) => current.filter((_, itemIndex) => itemIndex !== index)); setIsSettingsDirty(true); }}>삭제</button>}
             </div>
           ))}
         </div>

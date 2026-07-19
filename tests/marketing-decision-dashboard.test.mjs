@@ -125,3 +125,16 @@ test("실제 역할과 최근 접속 기록을 계정 화면에 반영한다", a
   assert.match(access, /UPDATE users SET last_login_at = \?/);
   assert.match(access, /Access logging must not block/);
 });
+
+test("사용자 권한 저장은 중복 계정과 최고관리자 잠금을 방지한다", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/settings/route.ts", import.meta.url), "utf8");
+  assert.match(page, /사용자 추가/);
+  assert.match(page, /중복 사용자 이메일이 있습니다/);
+  assert.match(page, /최고관리자를 최소 1명 유지해야 합니다/);
+  assert.match(page, /현재 계정/);
+  assert.match(route, /const seenEmails = new Set<string>/);
+  assert.match(route, /if \(seenEmails\.has\(email\)\)/);
+  assert.match(route, /normalizedUsers\.some\(\(user\) => user\.role === "owner"\)/);
+  assert.match(route, /ownerCount/);
+});
