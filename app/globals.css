@@ -2851,6 +2851,141 @@ body {
   font-weight: 800;
 }
 
+.place-rank-summary-grid,
+.place-rank-provider-grid,
+.rankfree-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.place-rank-provider-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin: 0 0 16px;
+}
+
+.place-rank-summary-grid article,
+.place-rank-provider-grid article,
+.rankfree-analysis-grid article {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(26, 49, 80, 0.09);
+  border-radius: 13px;
+  background: #fff;
+}
+
+.place-rank-summary-grid span,
+.place-rank-provider-grid span,
+.rankfree-analysis-grid span {
+  color: #687993;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.place-rank-summary-grid strong,
+.place-rank-provider-grid strong,
+.rankfree-analysis-grid strong {
+  color: #10233e;
+  font-size: 17px;
+}
+
+.place-rank-summary-grid strong.up { color: #14855e; }
+.place-rank-summary-grid strong.down { color: #d24f5f; }
+
+.place-rank-summary-grid small,
+.rankfree-analysis-grid small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.place-rank-provider-grid strong { font-size: 13px; }
+
+.rankfree-analysis-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(26, 49, 80, 0.09);
+}
+
+.rankfree-analysis-head h3,
+.rankfree-analysis-head p { margin: 0; }
+.rankfree-analysis-head h3 { color: #10233e; font-size: 15px; }
+.rankfree-analysis-head p { margin-top: 5px; color: var(--muted); font-size: 11px; }
+
+.rankfree-analysis-grid article p {
+  margin: 0;
+  color: #8b5d23;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.rankfree-related {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 13px 14px;
+  border-radius: 13px;
+  background: #f7faf8;
+}
+
+.rankfree-related > strong { color: #294a3a; font-size: 11px; }
+.rankfree-related > div { display: flex; flex-wrap: wrap; gap: 7px; }
+
+.rankfree-related span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid rgba(30, 132, 92, 0.12);
+  border-radius: 999px;
+  background: #fff;
+  color: #294a3a;
+  font-size: 10px;
+}
+
+.rankfree-related b { color: #16825c; }
+
+.rankfree-monthly-trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 7px;
+  height: 150px;
+  margin-top: 14px;
+  padding: 18px 8px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(26, 49, 80, 0.1);
+  background: repeating-linear-gradient(to bottom, transparent 0, transparent 44px, rgba(26, 49, 80, 0.05) 45px);
+}
+
+.rankfree-monthly-trend > div {
+  display: grid;
+  grid-template-rows: 18px minmax(0, 1fr) 20px;
+  align-items: end;
+  justify-items: center;
+  flex: 1 0 56px;
+  height: 100%;
+}
+
+.rankfree-monthly-trend b,
+.rankfree-monthly-trend span { color: #52637e; font-size: 9px; }
+
+.rankfree-monthly-trend i {
+  width: min(28px, 70%);
+  min-height: 5px;
+  border-radius: 7px 7px 2px 2px;
+  background: linear-gradient(180deg, #59a8f5, #306edb);
+}
+
+.rankfree-source-note { margin: 12px 0 0; color: var(--muted); font-size: 10px; }
+
 .place-rank-history-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
@@ -3210,6 +3345,10 @@ body {
   .place-rank-keyword-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .place-rank-provider-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 900px) {
@@ -3266,10 +3405,26 @@ body {
   .place-rank-manual input {
     width: 100%;
   }
+
+  .place-rank-summary-grid,
+  .rankfree-analysis-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rankfree-analysis-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 560px) {
   .place-rank-keyword-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .place-rank-summary-grid,
+  .place-rank-provider-grid,
+  .rankfree-analysis-grid {
     grid-template-columns: 1fr;
   }
 }

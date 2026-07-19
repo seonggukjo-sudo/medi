@@ -44,6 +44,15 @@ type RankfreeRankPayload = {
   blocked?: boolean;
 };
 
+type RankfreeSlot = {
+  id?: string | number;
+  keyword?: string;
+  place_id?: string | number;
+  placeId?: string | number;
+  last_rank?: number | null;
+  history?: unknown;
+};
+
 type ProviderPlaceItem = {
   placeId?: string | number;
   rank?: number | null;
@@ -238,6 +247,96 @@ async function registerRankfreeSlot(runtimeEnv: RuntimeEnv, keyword: PlaceRankKe
     created: Array.isArray(payload.created) ? payload.created.length : 0,
     skipped: Array.isArray(payload.skipped) ? payload.skipped.length : 0,
   };
+}
+
+function rankfreeSlots(payload: unknown): RankfreeSlot[] {
+  if (Array.isArray(payload)) return payload as RankfreeSlot[];
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as Record<string, unknown>;
+  for (const key of ["data", "slots", "items", "results"]) {
+    if (Array.isArray(record[key])) return record[key] as RankfreeSlot[];
+  }
+  return [];
+}
+
+function rankfreeHistory(value: unknown) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value as Record<string, unknown>).map(([date, rank]) => ({ date, rank }));
+}
+
+function rankfreeHistorySnapshot(keyword: PlaceRankKeyword, value: unknown): PlaceRankSnapshot | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const checkedValue = String(row.checked_at ?? row.checkedAt ?? row.created_at ?? row.createdAt ?? "");
+  const dateValue = String(row.date ?? row.day ?? (checkedValue ? dateInSeoul(checkedValue) : ""));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return null;
+  const measuredRank = Number(row.rank ?? row.value ?? row.position);
+  if (measuredRank === -429) {
+    return {
+      keywordId: keyword.id,
+      date: dateValue,
+      rank: null,
+      outsideTop100: false,
+      status: "failed",
+      source: "authorized-provider",
+      checkedAt: checkedValue && !Number.isNaN(new Date(checkedValue).getTime()) ? new Date(checkedValue).toISOString() : `${dateValue}T00:00:00.000Z`,
+      rankMethod: "provider-absolute",
+      trigger: "scheduled",
+      message: "랭크프리 조회가 일시 제한되었습니다.",
+    };
+  }
+  const outsideTop100 = measuredRank === 0 || measuredRank === 300 || measuredRank > 100;
+  const rank = Number.isInteger(measuredRank) && measuredRank >= 1 && measuredRank <= 100 ? measuredRank : null;
+  if (rank === null && !outsideTop100) return null;
+  return {
+    keywordId: keyword.id,
+    date: dateValue,
+    rank,
+    outsideTop100,
+    status: "measured",
+    source: "authorized-provider",
+    checkedAt: checkedValue && !Number.isNaN(new Date(checkedValue).getTime()) ? new Date(checkedValue).toISOString() : `${dateValue}T00:00:00.000Z`,
+    rankMethod: "provider-absolute",
+    trigger: "scheduled",
+    checkedCount: outsideTop100 ? 300 : undefined,
+    maxRank: 300,
+    message: outsideTop100 ? "100위 밖" : "랭크프리 자동 추적",
+  };
+}
+
+async function syncRankfreeSlotHistory(
+  runtimeEnv: RuntimeEnv,
+  access: { userId: string },
+  keywords: PlaceRankKeyword[],
+  snapshots: PlaceRankSnapshot[],
+) {
+  if (!runtimeEnv.RANKFREE_API_KEY || keywords.length === 0) return 0;
+  const response = await fetch("https://rankfree.kr/api/v1/rank/slots", {
+    headers: { authorization: `Bearer ${runtimeEnv.RANKFREE_API_KEY}` },
+  });
+  if (!response.ok) return 0;
+  const payload = await response.json().catch(() => ({}));
+  const slots = rankfreeSlots(payload);
+  const existing = new Set(snapshots.map((row) => `${row.keywordId}:${row.date}`));
+  let imported = 0;
+  for (const keyword of keywords) {
+    const normalized = normalizedKeyword(keyword.keyword);
+    const slot = slots.find((row) => {
+      const slotKeyword = normalizedKeyword(String(row.keyword ?? ""));
+      const slotPlaceId = String(row.place_id ?? row.placeId ?? "");
+      return slotKeyword === normalized && (!slotPlaceId || slotPlaceId === keyword.placeId);
+    });
+    if (!slot) continue;
+    for (const value of rankfreeHistory(slot.history)) {
+      const snapshot = rankfreeHistorySnapshot(keyword, value);
+      if (!snapshot || existing.has(`${keyword.id}:${snapshot.date}`)) continue;
+      await writeAudit(runtimeEnv, access, "place_rank_snapshot", keyword.id, snapshot);
+      existing.add(`${keyword.id}:${snapshot.date}`);
+      imported += 1;
+    }
+  }
+  return imported;
 }
 
 async function measureWithRankfree(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword, trigger: "scheduled" | "manual"): Promise<PlaceRankSnapshot> {
@@ -491,7 +590,7 @@ export async function GET(request: Request) {
     }
     const allData = await loadPlaceRankData(runtimeEnv.DB, hospitalId, "2000-01-01", "2999-12-31");
     const scheduledImported = runtimeEnv.RANKFREE_API_KEY
-      ? 0
+      ? await syncRankfreeSlotHistory(runtimeEnv, access, allData.keywords, allData.snapshots).catch(() => 0)
       : await syncScheduledRuns(runtimeEnv, access, allData.keywords, allData.snapshots).catch(() => 0);
     let data = await loadPlaceRankData(runtimeEnv.DB, hospitalId, start!, end!);
     if (url.searchParams.get("collect") === "today") {

@@ -191,12 +191,38 @@ type PlaceRankData = {
   snapshots: PlaceRankSnapshot[];
   range: { start: string; end: string };
   providerConfigured: boolean;
+  provider: "rankfree" | "apify" | null;
   collectionRule: "daily-09:00";
   scheduledTime: string;
   collectionAvailable: boolean;
   maxRank: number;
   excludesSponsored: boolean;
   syncedAt: string;
+  scheduledImported: number;
+};
+
+type RankfreeInsights = {
+  connected: boolean;
+  source?: "rankfree";
+  sourceNote?: string;
+  keywordStatus: "available" | "scope-required" | "unlinked" | "error";
+  keywordScope?: "keyword" | "keyword_detail" | null;
+  keywordData?: {
+    keyword: string;
+    monthlyPc: number;
+    monthlyMobile: number;
+    monthlyTotal: number;
+    competition: string;
+    related: Array<{ keyword: string; monthlyTotal: number }>;
+    monthly: Array<{ label: string; pc: number; mobile: number; total: number }>;
+  } | null;
+  keywordMessage?: string;
+  competitionStatus: "available" | "scope-required" | "not-analyzed" | "unlinked" | "error";
+  competition?: { slotId: string; rank: number | null; n1: number | null; n2: number | null; n3: number | null; analyzedAt: string } | null;
+  competitionMessage?: string;
+  rateLimit?: number | null;
+  rateRemaining?: number | null;
+  syncedAt?: string;
 };
 
 type NaverTrendMetricKey = "impressions" | "clicks" | "spend" | "cpc" | "ctr" | "conversions";
@@ -375,6 +401,13 @@ function formatPlaceRankCheckedAt(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatRankMovement(delta: number | null) {
+  if (delta === null) return "비교 기록 없음";
+  if (delta > 0) return `${delta}계단 상승`;
+  if (delta < 0) return `${Math.abs(delta)}계단 하락`;
+  return "순위 동일";
 }
 
 function shiftIsoDate(date: string, days: number) {
@@ -767,6 +800,8 @@ export default function Home() {
   const [selectedPlaceRankId, setSelectedPlaceRankId] = useState("");
   const [manualPlaceRank, setManualPlaceRank] = useState("");
   const [placeRankSaving, setPlaceRankSaving] = useState(false);
+  const [rankfreeInsights, setRankfreeInsights] = useState<RankfreeInsights | null>(null);
+  const [rankfreeInsightsState, setRankfreeInsightsState] = useState<"idle" | "loading" | "live" | "error">("idle");
   const periodOptions = periodOptionDefinitions.map((option) => ({
     ...option,
     range: option.label === "직접입력"
@@ -1064,6 +1099,36 @@ export default function Home() {
       });
     return () => controller.abort();
   }, [activeDateRange.start, activeDateRange.end, placeRankRefreshKey]);
+
+  useEffect(() => {
+    const selected = placeRankData?.keywords.find((row) => row.id === selectedPlaceRankId) ?? placeRankData?.keywords[0];
+    if (!selected || !placeRankData?.providerConfigured) {
+      setRankfreeInsights(null);
+      setRankfreeInsightsState("idle");
+      return;
+    }
+    const controller = new AbortController();
+    setRankfreeInsightsState("loading");
+    fetch(`/api/rankfree-insights?keyword=${encodeURIComponent(selected.keyword)}&placeId=${encodeURIComponent(selected.placeId)}`, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const body = await response.json() as RankfreeInsights | { error?: string };
+        if (!response.ok || !("keywordStatus" in body)) throw new Error("error" in body && body.error ? body.error : "플레이스 분석을 불러오지 못했습니다.");
+        return body;
+      })
+      .then((body) => {
+        setRankfreeInsights(body);
+        setRankfreeInsightsState("live");
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setRankfreeInsights(null);
+        setRankfreeInsightsState("error");
+      });
+    return () => controller.abort();
+  }, [placeRankData, selectedPlaceRankId]);
 
   const savePlaceRankKeyword = async () => {
     if (!placeRankKeyword.trim() || !placeRankUrl.trim()) {
@@ -2746,6 +2811,17 @@ export default function Home() {
   const selectedPlaceRankHistory = selectedPlaceRankKeyword
     ? (placeRankData?.snapshots.filter((row) => row.keywordId === selectedPlaceRankKeyword.id) ?? [])
     : [];
+  const sortedSelectedPlaceRankHistory = [...selectedPlaceRankHistory].sort((a, b) => a.date.localeCompare(b.date));
+  const latestSelectedPlaceRank = sortedSelectedPlaceRankHistory.at(-1);
+  const previousSelectedPlaceRank = sortedSelectedPlaceRankHistory.at(-2);
+  const firstSelectedPlaceRank = sortedSelectedPlaceRankHistory.find((row) => row.rank !== null);
+  const latestValidSelectedPlaceRank = [...sortedSelectedPlaceRankHistory].reverse().find((row) => row.rank !== null);
+  const dailyRankDelta = latestSelectedPlaceRank?.rank && previousSelectedPlaceRank?.rank
+    ? previousSelectedPlaceRank.rank - latestSelectedPlaceRank.rank
+    : null;
+  const periodRankDelta = firstSelectedPlaceRank?.rank && latestValidSelectedPlaceRank?.rank
+    ? firstSelectedPlaceRank.rank - latestValidSelectedPlaceRank.rank
+    : null;
   const latestPlaceRankByKeyword = new Map((placeRankData?.keywords ?? []).map((keyword) => {
     const rows = (placeRankData?.snapshots ?? []).filter((row) => row.keywordId === keyword.id).sort((a, b) => b.date.localeCompare(a.date));
     return [keyword.id, { latest: rows[0], previous: rows[1] }] as const;
@@ -3160,6 +3236,28 @@ export default function Home() {
                   </div>
                   <span className="place-rank-result-badge">광고 제외 · 자연 순위</span>
                 </div>
+                <div className="place-rank-summary-grid">
+                  <article>
+                    <span>현재 순위</span>
+                    <strong>{latestSelectedPlaceRank ? latestSelectedPlaceRank.status === "failed" ? "측정 실패" : latestSelectedPlaceRank.outsideTop100 ? "100위 밖" : `${latestSelectedPlaceRank.rank}위` : "기록 없음"}</strong>
+                    <small>{latestSelectedPlaceRank ? `${latestSelectedPlaceRank.date} ${formatPlaceRankCheckedAt(latestSelectedPlaceRank.checkedAt)}` : "측정 대기"}</small>
+                  </article>
+                  <article>
+                    <span>직전 측정 대비</span>
+                    <strong className={dailyRankDelta !== null && dailyRankDelta < 0 ? "down" : dailyRankDelta !== null && dailyRankDelta > 0 ? "up" : ""}>{formatRankMovement(dailyRankDelta)}</strong>
+                    <small>동일 키워드의 직전 저장값 기준</small>
+                  </article>
+                  <article>
+                    <span>선택 기간 변화</span>
+                    <strong className={periodRankDelta !== null && periodRankDelta < 0 ? "down" : periodRankDelta !== null && periodRankDelta > 0 ? "up" : ""}>{formatRankMovement(periodRankDelta)}</strong>
+                    <small>{activeDateRange.start} ~ {activeDateRange.end}</small>
+                  </article>
+                  <article>
+                    <span>기간 측정 상태</span>
+                    <strong>{selectedPlaceRankHistory.filter((row) => row.status !== "failed").length}/{selectedPlaceRankHistory.length || 0}일 정상</strong>
+                    <small>{selectedPlaceRankHistory.some((row) => row.status === "failed") ? "실패 기록을 확인해 주세요" : "저장된 기록 정상"}</small>
+                  </article>
+                </div>
                 {selectedPlaceRankHistory.length ? (
                   <>
                     <div className="place-rank-history-grid" aria-label={`${selectedPlaceRankKeyword.keyword} 날짜별 순위`}>
@@ -3182,6 +3280,64 @@ export default function Home() {
                     </div>
                   </>
                 ) : <div className="place-rank-empty">선택 기간에 저장된 순위 기록이 없습니다.</div>}
+                <div className="rankfree-analysis-head">
+                  <div>
+                    <h3>키워드 · 경쟁 분석</h3>
+                    <p>검색 수요와 경쟁 신호를 순위 추세와 함께 확인합니다. 없는 권한의 데이터는 추정하지 않습니다.</p>
+                  </div>
+                  <span className={`automation-status ${rankfreeInsightsState === "live" ? "active" : ""}`}>
+                    {rankfreeInsightsState === "loading" ? "분석 조회 중" : rankfreeInsightsState === "live" ? "랭크프리 분석 연결" : "분석 확인 필요"}
+                  </span>
+                </div>
+                <div className="rankfree-analysis-grid">
+                  <article>
+                    <span>월간 검색 수요</span>
+                    {rankfreeInsights?.keywordStatus === "available" && rankfreeInsights.keywordData ? (
+                      <>
+                        <strong>{rankfreeInsights.keywordData.monthlyTotal.toLocaleString("ko-KR")}회</strong>
+                        <small>PC {rankfreeInsights.keywordData.monthlyPc.toLocaleString("ko-KR")} · 모바일 {rankfreeInsights.keywordData.monthlyMobile.toLocaleString("ko-KR")}</small>
+                      </>
+                    ) : <p>{rankfreeInsights?.keywordMessage || "키워드 분석 권한을 확인해 주세요."}</p>}
+                  </article>
+                  <article>
+                    <span>검색 경쟁 강도</span>
+                    {rankfreeInsights?.keywordStatus === "available" && rankfreeInsights.keywordData ? (
+                      <>
+                        <strong>{rankfreeInsights.keywordData.competition || "정보 없음"}</strong>
+                        <small>{rankfreeInsights.keywordScope === "keyword_detail" ? "상세 키워드 분석" : "기본 키워드 분석"}</small>
+                      </>
+                    ) : <p>{rankfreeInsights?.keywordMessage || "데이터 미연동"}</p>}
+                  </article>
+                  <article>
+                    <span>경쟁 분석 점수</span>
+                    {rankfreeInsights?.competitionStatus === "available" && rankfreeInsights.competition ? (
+                      <>
+                        <strong>{rankfreeInsights.competition.n1 !== null ? `N1 ${rankfreeInsights.competition.n1}` : "분석 기록 있음"}</strong>
+                        <small>N2 {rankfreeInsights.competition.n2 ?? "-"} · N3 {rankfreeInsights.competition.n3 ?? "-"}</small>
+                      </>
+                    ) : <p>{rankfreeInsights?.competitionMessage || "경쟁 분석 권한을 확인해 주세요."}</p>}
+                  </article>
+                  <article>
+                    <span>API 상태</span>
+                    <strong>{rankfreeInsights?.connected ? "정상 연결" : "미연동"}</strong>
+                    <small>{rankfreeInsights?.rateRemaining !== null && rankfreeInsights?.rateRemaining !== undefined ? `오늘 잔여 호출 ${rankfreeInsights.rateRemaining.toLocaleString("ko-KR")}회` : "호출 한도 정보 없음"}</small>
+                  </article>
+                </div>
+                {rankfreeInsights?.keywordStatus === "available" && rankfreeInsights.keywordData?.related.length ? (
+                  <div className="rankfree-related">
+                    <strong>연관 키워드</strong>
+                    <div>{rankfreeInsights.keywordData.related.map((row) => <span key={row.keyword}>{row.keyword}<b>{row.monthlyTotal.toLocaleString("ko-KR")}</b></span>)}</div>
+                  </div>
+                ) : null}
+                {rankfreeInsights?.keywordStatus === "available" && rankfreeInsights.keywordData?.monthly.length ? (
+                  <div className="rankfree-monthly-trend" aria-label="최근 12개월 검색량 추이">
+                    {rankfreeInsights.keywordData.monthly.map((row) => {
+                      const max = Math.max(...rankfreeInsights.keywordData!.monthly.map((item) => item.total), 1);
+                      return <div key={row.label}><b>{row.total.toLocaleString("ko-KR")}</b><i style={{ height: `${Math.max(6, row.total / max * 100)}%` }} /><span>{row.label.slice(2)}</span></div>;
+                    })}
+                  </div>
+                ) : null}
+                {rankfreeInsights?.sourceNote ? <p className="rankfree-source-note">{rankfreeInsights.sourceNote}</p> : null}
               </div>
             ) : null}
           </>
@@ -3668,6 +3824,14 @@ export default function Home() {
         <div className="place-rank-status-row">
           <span>{placeRankMessage}</span>
           <small>측정 기준 09:00 · 광고 제외 · 일자별 자동 저장</small>
+        </div>
+        <div className="place-rank-provider-grid">
+          <article><span>순위 공급자</span><strong>{placeRankData?.provider === "rankfree" ? "랭크프리" : placeRankData?.provider === "apify" ? "외부 브라우저" : "미연동"}</strong></article>
+          <article><span>자동 측정</span><strong>{placeRankData?.providerConfigured ? "매일 09:00" : "사용 안 함"}</strong></article>
+          <article><span>마지막 동기화</span><strong>{placeRankData?.syncedAt ? formatPlaceRankCheckedAt(placeRankData.syncedAt) : "-"}</strong></article>
+          <article><span>이번 동기화 반영</span><strong>{placeRankData?.scheduledImported ?? 0}건</strong></article>
+          <article><span>키워드 분석</span><strong>{rankfreeInsights?.keywordStatus === "available" ? "사용 가능" : rankfreeInsights?.keywordStatus === "scope-required" ? "권한 필요" : "확인 필요"}</strong></article>
+          <article><span>경쟁 분석</span><strong>{rankfreeInsights?.competitionStatus === "available" ? "사용 가능" : rankfreeInsights?.competitionStatus === "not-analyzed" ? "분석 기록 없음" : rankfreeInsights?.competitionStatus === "scope-required" ? "권한 필요" : "확인 필요"}</strong></article>
         </div>
 
         <div className="place-rank-register">
