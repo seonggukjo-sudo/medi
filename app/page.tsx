@@ -4232,7 +4232,7 @@ export default function Home() {
         <div className="profile-avatar">{isAuthenticated ? "관" : "게"}</div>
         <div>
           <span className="ai-pill">ACCOUNT</span>
-          <h2>{isAuthenticated ? "관리자 계정" : "게스트 계정"}</h2>
+          <h2>{isAuthenticated ? `${accessRole} 계정` : "게스트 계정"}</h2>
           <p>{isAuthenticated ? loginEmail : "로그인하면 계정별 설정과 권한을 사용할 수 있습니다."}</p>
         </div>
       </div>
@@ -4246,8 +4246,12 @@ export default function Home() {
       <div className="account-detail-grid">
         <div><span>소속 병원</span><strong>{hospitalName}</strong></div>
         <div><span>기준 지점</span><strong>{hospitalLocation}</strong></div>
-        <div><span>접근 권한</span><strong>{isAuthenticated ? "관리자" : "미인증"}</strong></div>
+        <div><span>접근 권한</span><strong>{isAuthenticated ? accessRole : "미인증"}</strong></div>
+        <div><span>분석 데이터</span><strong className="permission-enabled">조회 가능</strong></div>
+        <div><span>데이터 관리</span><strong className={canManageData ? "permission-enabled" : "permission-limited"}>{canManageData ? "업로드·수정 가능" : "조회 전용"}</strong></div>
+        <div><span>설정 관리</span><strong className={canManageSettings ? "permission-enabled" : "permission-limited"}>{canManageSettings ? "사용자·목표 변경 가능" : "권한 없음"}</strong></div>
       </div>
+      <p className="account-security-note">최근 접속 시각은 서버에서 15분 간격으로 갱신되며, 모든 데이터 요청은 현재 역할을 다시 검사합니다.</p>
     </section>
   );
 

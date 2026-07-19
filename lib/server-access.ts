@@ -16,6 +16,8 @@ export class AccessError extends Error {
   }
 }
 
+const accessHeartbeatIntervalMs = 15 * 60 * 1000;
+
 function requestEmail(request: Request) {
   const email = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
   if (email) return email;
@@ -49,12 +51,26 @@ export async function requireAccess(
   const role: DashboardRole = bootstrap ? "owner" : user!.role;
   if (!allowedRoles.includes(role)) throw new AccessError("이 작업을 수행할 권한이 없습니다.", 403);
 
+  const now = new Date();
+  const previousAccessAt = user?.lastLoginAt ? Date.parse(user.lastLoginAt) : 0;
+  const shouldRefreshAccess = Boolean(user && (!Number.isFinite(previousAccessAt) || now.getTime() - previousAccessAt >= accessHeartbeatIntervalMs));
+  if (shouldRefreshAccess && user) {
+    try {
+      await env.DB.prepare("UPDATE users SET last_login_at = ? WHERE hospital_id = ? AND user_id = ?")
+        .bind(now.toISOString(), hospitalId, user.userId)
+        .run();
+    } catch {
+      // Access logging must not block an otherwise authorized dashboard request.
+    }
+  }
+
   return {
     email,
     role,
     bootstrap,
     userId: user?.userId ?? email,
     name: user?.name ?? email.split("@")[0],
+    lastLoginAt: shouldRefreshAccess ? now.toISOString() : user?.lastLoginAt ?? null,
   };
 }
 
