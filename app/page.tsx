@@ -3144,7 +3144,7 @@ export default function Home() {
                   >
                     <span>{keyword.keyword}</span>
                     <strong>{latest ? latest.outsideTop100 ? "100위 밖" : latest.rank ? `${latest.rank}위` : "측정 실패" : "기록 없음"}</strong>
-                    <small>{delta === null ? "비교 기록 없음" : delta > 0 ? `전일 대비 ${delta}계단 상승` : delta < 0 ? `전일 대비 ${Math.abs(delta)}계단 하락` : "전일과 동일"}</small>
+                    <small>{latest?.status === "failed" ? latest.message || "공급자 측정 오류" : delta === null ? "비교 기록 없음" : delta > 0 ? `전일 대비 ${delta}계단 상승` : delta < 0 ? `전일 대비 ${Math.abs(delta)}계단 하락` : "전일과 동일"}</small>
                     <i>{latest ? `${latest.date} · ${formatPlaceRankCheckedAt(latest.checkedAt)} · ${latest.status === "manual" ? "수동 입력값(자동값 아님)" : latest.trigger === "manual" ? "수동 측정" : latest.status === "failed" ? "실패" : "09:00 자동"}` : "측정 대기"}</i>
                   </button>
                 );
@@ -3167,6 +3167,7 @@ export default function Home() {
                         <div className={`place-rank-history-cell ${row.status === "failed" ? "failed" : ""}`} key={`cell-${row.keywordId}-${row.date}`}>
                           <span>{row.date.slice(5).replace("-", "-")}({new Intl.DateTimeFormat("ko-KR", { weekday: "short", timeZone: "Asia/Seoul" }).format(new Date(`${row.date}T00:00:00+09:00`))}) · {formatPlaceRankCheckedAt(row.checkedAt)}</span>
                           <strong>{row.status === "failed" ? "측정 실패" : row.outsideTop100 ? "100위 밖" : `${row.rank}위`}</strong>
+                          {row.status === "failed" && row.message ? <small>{row.message}</small> : null}
                         </div>
                       ))}
                     </div>
@@ -3692,7 +3693,7 @@ export default function Home() {
                     <span>{keyword.keyword}</span>
                     <strong>{latest ? latest.outsideTop100 ? "100위 밖" : latest.rank ? `${latest.rank}위` : "측정 실패" : "측정 대기"}</strong>
                     <small>Place ID {keyword.placeId}</small>
-                    <i>{latest ? `최근 측정 ${latest.date}` : "09:00 자동 측정 예정"}</i>
+                    <i>{latest ? latest.status === "failed" ? latest.message || `최근 측정 실패 ${latest.date}` : `최근 측정 ${latest.date}` : "09:00 자동 측정 예정"}</i>
                   </button>
                 );
               })}

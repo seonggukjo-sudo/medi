@@ -43,6 +43,7 @@ type ProviderPlaceItem = {
   type?: string;
   resultType?: string;
   message?: string;
+  error?: string;
 };
 
 type ProviderPayload = ProviderPlaceItem | ProviderPlaceItem[] | {
@@ -77,6 +78,10 @@ function explicitProviderRank(item: ProviderPlaceItem) {
   return null;
 }
 
+function hasProviderRankField(item: ProviderPlaceItem) {
+  return ["naturalRank", "organicRank", "rank", "position"].some((key) => key in item);
+}
+
 function resolveProviderRank(payload: ProviderPayload, keyword: PlaceRankKeyword) {
   const items = providerItems(payload);
   if (items.length) {
@@ -85,11 +90,30 @@ function resolveProviderRank(payload: ProviderPayload, keyword: PlaceRankKeyword
     if (targetIndex < 0) {
       return { rank: null, blocked: false, message: "자연 검색 결과에서 등록한 Place ID를 찾지 못했습니다." };
     }
+    const target = naturalItems[targetIndex];
+    if (target.blocked === true) {
+      return { rank: null, blocked: true, outsideTop100: false, message: target.message || target.error || "검색 공급자가 측정을 차단했습니다." };
+    }
     // Some providers return only the matched place in `results`, with its
     // absolute rank attached to the item. Do not mistake that one-item array
     // for a full result list, or a real 11th place becomes 1st place.
-    const rank = explicitProviderRank(naturalItems[targetIndex]) ?? targetIndex + 1;
-    return { rank: rank <= 100 ? rank : null, blocked: false, message: rank > 100 ? "100위 밖" : undefined };
+    const explicitRank = explicitProviderRank(target);
+    if (explicitRank !== null) {
+      return { rank: explicitRank, blocked: false, outsideTop100: false, message: target.message };
+    }
+    if (hasProviderRankField(target)) {
+      return { rank: null, blocked: false, outsideTop100: true, message: target.message || "100위 밖" };
+    }
+    if (naturalItems.length > 1) {
+      const rank = targetIndex + 1;
+      return { rank: rank <= 100 ? rank : null, blocked: false, outsideTop100: rank > 100, message: rank > 100 ? "100위 밖" : undefined };
+    }
+    return {
+      rank: null,
+      blocked: false,
+      outsideTop100: false,
+      message: target.message || target.error || "공급자 응답에 절대 자연순위(rank) 값이 없습니다.",
+    };
   }
 
   const body = (Array.isArray(payload) ? (payload[0] ?? {}) : payload) as ProviderPlaceItem;
@@ -98,7 +122,13 @@ function resolveProviderRank(payload: ProviderPayload, keyword: PlaceRankKeyword
   }
   const measuredRank = explicitProviderRank(body);
   const rank = Number.isInteger(measuredRank) && measuredRank >= 1 && measuredRank <= 100 ? measuredRank : null;
-  return { rank, blocked: body.blocked === true, message: rank === null && !body.blocked ? (body.message || "100위 밖") : body.message };
+  const outsideTop100 = body.blocked !== true && hasProviderRankField(body) && rank === null;
+  return {
+    rank,
+    blocked: body.blocked === true,
+    outsideTop100,
+    message: body.message || body.error || (outsideTop100 ? "100위 밖" : rank === null ? "공급자 응답에 절대 자연순위(rank) 값이 없습니다." : undefined),
+  };
 }
 
 function seoulDate() {
@@ -228,12 +258,15 @@ async function measureKeyword(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword,
   const resolved = resolveProviderRank(payload, keyword);
   if (!response.ok) throw new Error(resolved.message || `순위 공급자 조회 실패 (HTTP ${response.status})`);
   if (resolved.blocked) throw new Error(resolved.message || "검색 서비스의 접근 제한으로 순위를 측정하지 못했습니다.");
+  if (resolved.rank === null && !resolved.outsideTop100) {
+    throw new Error(resolved.message || "공급자가 유효한 자연 노출 순위를 반환하지 않았습니다.");
+  }
   const rank = resolved.rank;
   return {
     keywordId: keyword.id,
     date,
     rank,
-    outsideTop100: rank === null,
+    outsideTop100: resolved.outsideTop100,
     status: "measured",
     source: "authorized-provider",
     checkedAt,
