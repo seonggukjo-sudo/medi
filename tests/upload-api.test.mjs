@@ -107,6 +107,9 @@ test("저장하지 않은 일자별 수정값은 메뉴 이동과 창 종료 전
   assert.match(pageSource, /requestMenuChange/);
   assert.match(pageSource, /저장하지 않은 변경사항이 있습니다/);
   assert.match(pageSource, /계속 수정/);
+  assert.match(pageSource, /dailyEditReason\.trim\(\)\.length < 2/);
+  assert.match(pageSource, /onClick=\{saveDailyData\}/);
+  assert.match(pageSource, /저장 후 이동/);
   assert.match(pageSource, /변경 취소 후 이동/);
   assert.match(pageSource, /discardDailyChangesAndNavigate/);
   assert.match(cssSource, /\.unsaved-dialog/);

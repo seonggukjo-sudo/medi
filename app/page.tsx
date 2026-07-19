@@ -1375,6 +1375,9 @@ export default function Home() {
       dailyEditBackupRef.current = null;
       setDailySaveState("saved");
       setValidationResults(`일자별 수정값 ${body.saved ?? rows.length}건을 서버에 저장하고 변경 이력에 기록했습니다.`);
+      const nextMenu = pendingMenu;
+      setPendingMenu(null);
+      if (nextMenu) setActiveMenu(nextMenu);
     } catch (error) {
       setDailySaveState("error");
       setValidationResults(error instanceof Error ? error.message : "일자별 수정값을 저장하지 못했습니다.");
@@ -4637,6 +4640,7 @@ export default function Home() {
             <div className="unsaved-actions">
               <button className="pill" type="button" onClick={() => setPendingMenu(null)}>계속 수정</button>
               {isSettingsDirty && !isDataDirty ? <button className="primary-button" type="button" disabled={Boolean(userAccessValidation) || settingsSaveState === "saving"} onClick={saveSettings}>{settingsSaveState === "saving" ? "저장 중" : "저장 후 이동"}</button> : null}
+              {isDataDirty && !isSettingsDirty ? <button className="primary-button" type="button" disabled={dailyEditReason.trim().length < 2 || dailySaveState === "saving"} onClick={saveDailyData}>{dailySaveState === "saving" ? "저장 중" : "저장 후 이동"}</button> : null}
               <button className="danger-button" type="button" onClick={discardDailyChangesAndNavigate}>변경 취소 후 이동</button>
             </div>
           </section>
