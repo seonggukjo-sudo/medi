@@ -14,6 +14,7 @@ type RuntimeEnv = {
 
 type ApifyRun = {
   id?: string;
+  status?: string;
   startedAt?: string;
   defaultDatasetId?: string;
   meta?: { origin?: string };
@@ -201,6 +202,48 @@ function dateInSeoul(value: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
+async function readRankResultFromRunLog(runtimeEnv: RuntimeEnv, runId: string) {
+  if (!runtimeEnv.PLACE_RANK_PROVIDER_TOKEN) return null;
+  const response = await fetch(`https://api.apify.com/v2/actor-runs/${encodeURIComponent(runId)}/log`, {
+    headers: { authorization: `Bearer ${runtimeEnv.PLACE_RANK_PROVIDER_TOKEN}` },
+  });
+  if (!response.ok) return null;
+  const log = await response.text();
+  const marker = "Place rank check completed ";
+  const line = log.split(/\r?\n/).reverse().find((value) => value.includes(marker));
+  if (!line) return null;
+  try {
+    return JSON.parse(line.slice(line.indexOf(marker) + marker.length)) as ApifyRankResult;
+  } catch {
+    return null;
+  }
+}
+
+async function runActorAndReadLog(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword) {
+  const actorId = providerActorId(runtimeEnv);
+  if (!actorId || !runtimeEnv.PLACE_RANK_PROVIDER_TOKEN) return null;
+  const response = await fetch(`https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/runs?waitForFinish=60`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${runtimeEnv.PLACE_RANK_PROVIDER_TOKEN}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      keyword: keyword.keyword,
+      placeUrl: keyword.placeUrl,
+      placeId: keyword.placeId,
+      maxRank: 100,
+      excludeSponsored: true,
+    }),
+  });
+  if (!response.ok) throw new Error(`순위 공급자 실행 실패 (HTTP ${response.status})`);
+  const body = await response.json().catch(() => ({})) as { data?: ApifyRun };
+  const run = body.data;
+  if (!run?.id) throw new Error("순위 공급자 실행 ID를 확인할 수 없습니다.");
+  if (run.status !== "SUCCEEDED") throw new Error(`순위 공급자 실행이 완료되지 않았습니다 (${run.status || "UNKNOWN"}).`);
+  return readRankResultFromRunLog(runtimeEnv, run.id);
+}
+
 async function syncScheduledRuns(
   runtimeEnv: RuntimeEnv,
   access: { userId: string },
@@ -225,11 +268,8 @@ async function syncScheduledRuns(
   for (const run of scheduledRuns) {
     const runDate = dateInSeoul(run.startedAt ?? "");
     if (!run.id || !runDate || keywords.every((keyword) => existing.has(`${keyword.id}:${runDate}`))) continue;
-    const resultResponse = await fetch(`https://api.apify.com/v2/actor-runs/${encodeURIComponent(run.id)}/dataset/items?clean=true&format=json`, {
-      headers: { authorization: `Bearer ${runtimeEnv.PLACE_RANK_PROVIDER_TOKEN}` },
-    });
-    if (!resultResponse.ok) continue;
-    const results = await resultResponse.json().catch(() => []) as ApifyRankResult[];
+    const runResult = await readRankResultFromRunLog(runtimeEnv, run.id);
+    const results = runResult ? [runResult] : [];
 
     for (const result of Array.isArray(results) ? results : []) {
       const keyword = keywords.find((item) =>
@@ -277,24 +317,33 @@ async function measureKeyword(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword,
     throw new Error("허가된 순위 측정 공급자가 아직 연결되지 않았습니다.");
   }
 
-  const response = await fetch(runtimeEnv.PLACE_RANK_PROVIDER_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(runtimeEnv.PLACE_RANK_PROVIDER_TOKEN ? { authorization: `Bearer ${runtimeEnv.PLACE_RANK_PROVIDER_TOKEN}` } : {}),
-    },
-    body: JSON.stringify({
-      keyword: keyword.keyword,
-      placeUrl: keyword.placeUrl,
-      placeId: keyword.placeId,
-      maxRank: 100,
-      excludeSponsored: true,
-    }),
-  });
-  const payload = await response.json().catch(() => ({})) as ProviderPayload;
+  const actorResult = await runActorAndReadLog(runtimeEnv, keyword);
+  let payload: ProviderPayload;
+  if (actorResult) {
+    payload = actorResult;
+  } else {
+    const response = await fetch(runtimeEnv.PLACE_RANK_PROVIDER_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(runtimeEnv.PLACE_RANK_PROVIDER_TOKEN ? { authorization: `Bearer ${runtimeEnv.PLACE_RANK_PROVIDER_TOKEN}` } : {}),
+      },
+      body: JSON.stringify({
+        keyword: keyword.keyword,
+        placeUrl: keyword.placeUrl,
+        placeId: keyword.placeId,
+        maxRank: 100,
+        excludeSponsored: true,
+      }),
+    });
+    payload = await response.json().catch(() => ({})) as ProviderPayload;
+    if (!response.ok) {
+      const failed = resolveProviderRank(payload, keyword);
+      throw new Error(failed.message || `순위 공급자 조회 실패 (HTTP ${response.status})`);
+    }
+  }
   const resolved = resolveProviderRank(payload, keyword);
   const checkedCount = providerCheckedCount(payload);
-  if (!response.ok) throw new Error(resolved.message || `순위 공급자 조회 실패 (HTTP ${response.status})`);
   if (resolved.blocked) throw new Error(resolved.message || "검색 서비스의 접근 제한으로 순위를 측정하지 못했습니다.");
   if (resolved.rank === null && !resolved.outsideTop100) {
     throw new Error(resolved.message || "공급자가 유효한 자연 노출 순위를 반환하지 않았습니다.");
