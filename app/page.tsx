@@ -732,11 +732,12 @@ function ChartHeader({ title, right }: { title: string; right?: ReactNode }) {
 }
 
 function EvidenceLabel({ range, compare, status }: { range: string; compare: string; status: string }) {
+  const statusTone = status === "정상 연동" ? "good" : status === "부분 연동" ? "partial" : status === "연결 확인 중" ? "loading" : "empty";
   return (
     <div className="common-period-strip" role="status">
       <span className="period-strip-item"><b>집계 기간</b>{range}</span>
       <span className="period-strip-item"><b>비교 기간</b>{compare}</span>
-      <span className={`period-strip-status ${status === "정상 연동" ? "good" : status === "부분 연동" ? "partial" : "empty"}`}><i />{status}</span>
+      <span className={`period-strip-status ${statusTone}`}><i />{status}</span>
     </div>
   );
 }
@@ -2171,7 +2172,7 @@ export default function Home() {
     }
   };
 
-  const commonDataStatus = dataSourceState === "live"
+  const baseDataStatus = dataSourceState === "live"
     ? (dataQuality && (dataQuality.warnings.missingLinks > 0 || dataQuality.warnings.duplicates > 0 || dataQuality.reconciliation.some((row) => !row.passed)) ? "부분 연동" : "정상 연동")
     : dataSourceState === "loading" ? "연결 확인 중" : "미연동";
   const dimensionReconciliation = actualKpiResult
@@ -2192,6 +2193,15 @@ export default function Home() {
   const reconciliationWarning = reconciliationRows.some((row) => !row.passed);
   const reconciliationMismatchCount = reconciliationRows.filter((row) => !row.passed).length;
   const appliedOverrideDays = dataQuality?.overrides?.length ?? 0;
+  const commonDataStatus = baseDataStatus === "정상 연동" && reconciliationWarning ? "부분 연동" : baseDataStatus;
+  const sidebarStatusTone = commonDataStatus === "정상 연동" ? "good" : commonDataStatus === "부분 연동" ? "partial" : commonDataStatus === "연결 확인 중" ? "loading" : "empty";
+  const sidebarStatusDetail = commonDataStatus === "정상 연동"
+    ? (dataRefreshAt ? `최근 집계 ${dataRefreshAt}` : "검증된 원천 데이터 사용")
+    : commonDataStatus === "부분 연동"
+      ? `합계 불일치 ${reconciliationMismatchCount}개 · 확인 필요`
+      : commonDataStatus === "연결 확인 중"
+        ? "원천 데이터 상태를 확인하는 중"
+        : "데이터 관리에서 실데이터 연결 필요";
   const reconciliationState = (metrics: string[]) => {
     const rows = dimensionReconciliation.filter((row) => metrics.includes(row.metric));
     return rows.length > 0 && rows.every((row) => row.passed);
@@ -4526,11 +4536,11 @@ export default function Home() {
           })}
         </nav>
 
-        <div className="sidebar-footer">
-          <div className="dot" />
+        <div className={`sidebar-footer ${sidebarStatusTone}`} role="status">
+          <div className={`dot ${sidebarStatusTone}`} />
           <div>
-            <strong>데이터 정상 연결</strong>
-            <span>GA4 5분 주기 · 화면 복귀 시 즉시 갱신</span>
+            <strong>데이터 {commonDataStatus}</strong>
+            <span>{sidebarStatusDetail}</span>
           </div>
         </div>
       </aside>

@@ -244,6 +244,7 @@ button {
 
 .period-strip-status.good i { background: #16a579; }
 .period-strip-status.partial i { background: #f2a74b; }
+.period-strip-status.loading i { background: #5c83cf; }
 .period-strip-status.empty i { background: #e04d4d; }
 .data-refresh-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .external-sync-label {
@@ -410,6 +411,26 @@ button {
     display: grid;
     grid-template-columns: 1fr;
   }
+}
+
+.sidebar-footer .dot.good {
+  background: #34e2a0;
+  box-shadow: 0 0 0 6px rgba(52, 226, 160, 0.14);
+}
+
+.sidebar-footer .dot.partial {
+  background: #f2b454;
+  box-shadow: 0 0 0 6px rgba(242, 180, 84, 0.14);
+}
+
+.sidebar-footer .dot.loading {
+  background: #76a4ff;
+  box-shadow: 0 0 0 6px rgba(118, 164, 255, 0.14);
+}
+
+.sidebar-footer .dot.empty {
+  background: #f07373;
+  box-shadow: 0 0 0 6px rgba(240, 115, 115, 0.14);
 }
 
 .kpi-detail-dialog {

@@ -192,3 +192,18 @@ test("수동 수정 합계와 세부 원천의 차이를 모든 페이지에서 
   assert.match(page, /requestMenuChange\("data"\)/);
   assert.match(css, /\.override-applied-label/);
 });
+
+test("상단과 사이드바의 데이터 상태가 실제 대사 결과를 동일하게 반영한다", async () => {
+  const [page, css] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /baseDataStatus === "정상 연동" && reconciliationWarning/);
+  assert.match(page, /sidebarStatusDetail/);
+  assert.match(page, /합계 불일치 \$\{reconciliationMismatchCount\}개/);
+  assert.match(page, /데이터 \{commonDataStatus\}/);
+  assert.doesNotMatch(page, /<strong>데이터 정상 연결<\/strong>/);
+  assert.match(css, /\.period-strip-status\.loading i/);
+  assert.match(css, /\.sidebar-footer \.dot\.partial/);
+  assert.match(css, /\.sidebar-footer \.dot\.empty/);
+});
