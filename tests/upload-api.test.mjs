@@ -4,6 +4,7 @@ import test from "node:test";
 
 const uploadRouteUrl = new URL("../app/api/uploads/route.ts", import.meta.url);
 const dataQualityRouteUrl = new URL("../app/api/data-quality/route.ts", import.meta.url);
+const dailyOverridesUrl = new URL("../lib/daily-metric-overrides.ts", import.meta.url);
 const pageUrl = new URL("../app/page.tsx", import.meta.url);
 const updateDocUrl = new URL("../outputs/메디인사이트_운영저장구조_마이그레이션_업데이트.md", import.meta.url);
 
@@ -45,6 +46,22 @@ test("데이터 관리 업로드 이력은 원본 파일과 실제 적용 기간
   assert.match(pageSource, /적용 기간/);
   assert.match(pageSource, /이상 없음/);
   assert.match(pageSource, /오류 \$\{row\.errorCount\}/);
+});
+
+test("일자별 직접 수정값은 수정자와 시각을 포함한 전체 이력으로 표시한다", async () => {
+  const [overrideSource, qualitySource, pageSource] = await Promise.all([
+    readFile(dailyOverridesUrl, "utf8"),
+    readFile(dataQualityRouteUrl, "utf8"),
+    readFile(pageUrl, "utf8"),
+  ]);
+
+  assert.match(overrideSource, /loadDailyMetricOverrideHistory/);
+  assert.match(overrideSource, /ORDER BY created_at DESC LIMIT \?/);
+  assert.match(qualitySource, /overrideHistory/);
+  assert.match(pageSource, /일자별 수치 수정 이력/);
+  assert.match(pageSource, /수정자/);
+  assert.match(pageSource, /수정 시각/);
+  assert.match(pageSource, /동일 일자를 여러 번 수정한 경우/);
 });
 
 test("업로드 화면과 운영 문서는 서버 저장 API 준비 상태를 안내한다", async () => {

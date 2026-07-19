@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { accessErrorResponse, requireAccess } from "@/lib/server-access";
-import { loadDailyMetricOverrides } from "@/lib/daily-metric-overrides";
+import { loadDailyMetricOverrideHistory, loadDailyMetricOverrides } from "@/lib/daily-metric-overrides";
 
 export const runtime = "edge";
 const hospitalId = "demo-hospital";
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const end = url.searchParams.get("end") || new Date().toISOString().slice(0, 10);
     const start = url.searchParams.get("start") || end;
-    const [lead, appointment, visit, payment, spend, uploads, missingLinks, duplicateWarnings, overrides] = await Promise.all([
+    const [lead, appointment, visit, payment, spend, uploads, missingLinks, duplicateWarnings, overrides, overrideHistory] = await Promise.all([
       count("SELECT COUNT(DISTINCT lead_id) AS count FROM leads WHERE hospital_id = ? AND received_at BETWEEN ? AND ? AND lead_id <> ''", start, end),
       count("SELECT COUNT(DISTINCT appointment_id) AS count FROM appointments WHERE hospital_id = ? AND booked_at BETWEEN ? AND ? AND appointment_id <> ''", start, end),
       count("SELECT COUNT(DISTINCT visit_id) AS count FROM visits WHERE hospital_id = ? AND visited_at BETWEEN ? AND ? AND visit_id <> ''", start, end),
@@ -56,6 +56,7 @@ export async function GET(request: Request) {
       env.DB.prepare("SELECT (SELECT COUNT(*) FROM appointments a LEFT JOIN leads l ON l.hospital_id = a.hospital_id AND l.lead_id = a.lead_id WHERE a.hospital_id = ? AND a.lead_id <> '' AND l.lead_id IS NULL) + (SELECT COUNT(*) FROM visits v LEFT JOIN appointments a ON a.hospital_id = v.hospital_id AND a.appointment_id = v.appointment_id WHERE v.hospital_id = ? AND v.appointment_id <> '' AND a.appointment_id IS NULL) AS count").bind(hospitalId, hospitalId).first<CountRow>(),
       env.DB.prepare("SELECT COALESCE(SUM(warning_count), 0) AS count FROM upload_batches WHERE hospital_id = ?").bind(hospitalId).first<CountRow>(),
       loadDailyMetricOverrides(env.DB, hospitalId, start, end),
+      loadDailyMetricOverrideHistory(env.DB, hospitalId, start, end),
     ]);
 
     const dateQueries = [
@@ -84,7 +85,7 @@ export async function GET(request: Request) {
     const uploadRows = uploads.results as Array<{ status: string; rowCount: number; errorCount: number; warningCount: number }>;
     const uploadSummary = { total: uploadRows.length, validated: uploadRows.filter((row) => row.status === "validated").length, review: uploadRows.filter((row) => row.status === "needs_review").length, errors: uploadRows.reduce((sum, row) => sum + Number(row.errorCount), 0) };
 
-    return Response.json({ range: { start, end }, connected: Object.values(totals).some((value) => value > 0), totals, sourceTotals, daily, overrides, uploads: uploads.results, uploadSummary, warnings: { missingLinks: Number(missingLinks?.count ?? 0), duplicates: Number(duplicateWarnings?.count ?? 0) }, reconciliation });
+    return Response.json({ range: { start, end }, connected: Object.values(totals).some((value) => value > 0), totals, sourceTotals, daily, overrides, overrideHistory, uploads: uploads.results, uploadSummary, warnings: { missingLinks: Number(missingLinks?.count ?? 0), duplicates: Number(duplicateWarnings?.count ?? 0) }, reconciliation });
   } catch (error) {
     return accessErrorResponse(error, "데이터 품질을 검사하지 못했습니다.");
   }

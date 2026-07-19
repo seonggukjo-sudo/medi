@@ -344,6 +344,7 @@ type DataQuality = {
   totals: { inquiries: number; reservations: number; visits: number; sales: number; adSpend: number };
   daily: DailyDataRow[];
   overrides?: Array<DailyDataRow & { updatedAt?: string; updatedBy?: string }>;
+  overrideHistory?: Array<DailyDataRow & { updatedAt?: string; updatedBy?: string }>;
   uploadSummary: { total: number; validated: number; review: number; errors: number };
   warnings: { missingLinks: number; duplicates: number };
   uploads: Array<{ batchId: string; uploadedAt: string; uploadedBy?: string; status: string; rowCount: number; errorCount: number; warningCount: number; fileName?: string; tableKey?: ImportTableKey; periodStart?: string; periodEnd?: string }>;
@@ -3759,6 +3760,27 @@ export default function Home() {
             </div>
           ))}
           {visibleDailyData.length === 0 ? <div className="data-empty-row">선택 기간에 연결된 실데이터가 없습니다.</div> : null}
+        </div>
+      </section>
+
+      <section className="panel table-panel daily-history-panel">
+        <ChartHeader title="일자별 수치 수정 이력" right={<span className="chart-period-note">선택 기간 · 최근 {dataQuality?.overrideHistory?.length ?? 0}건</span>} />
+        <p className="table-helper">관리자가 직접 수정해 저장한 값만 표시합니다. 동일 일자를 여러 번 수정한 경우 최신 기록부터 모두 보존됩니다.</p>
+        <div className="data-table">
+          <div className="table-head daily-history-head"><span>대상 일자</span><span>수정자</span><span>수정 시각</span><span>문의</span><span>예약</span><span>내원</span><span>매출</span><span>광고비</span></div>
+          {(dataQuality?.overrideHistory ?? []).map((row, index) => (
+            <div className="table-row daily-history-row" key={`${row.date}-${row.updatedAt ?? index}`}>
+              <b>{row.date}</b>
+              <span>{row.updatedBy || "확인 불가"}</span>
+              <span>{row.updatedAt ? new Date(row.updatedAt).toLocaleString("ko-KR") : "-"}</span>
+              <span>{row.inquiries.toLocaleString("ko-KR")}</span>
+              <span>{row.reservations.toLocaleString("ko-KR")}</span>
+              <span>{row.visits.toLocaleString("ko-KR")}</span>
+              <span>{formatWon(row.sales)}</span>
+              <span>{formatWon(row.adSpend)}</span>
+            </div>
+          ))}
+          {!dataQuality?.overrideHistory?.length ? <div className="data-empty-row">선택 기간에 저장된 직접 수정 이력이 없습니다.</div> : null}
         </div>
       </section>
 

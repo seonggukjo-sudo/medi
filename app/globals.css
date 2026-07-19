@@ -1363,6 +1363,25 @@ button {
   background: #ffeded;
 }
 
+.daily-history-panel {
+  margin-top: 10px;
+}
+
+.daily-history-head,
+.daily-history-row {
+  grid-template-columns: minmax(100px, 0.8fr) minmax(130px, 1fr) minmax(155px, 1.15fr) repeat(3, minmax(70px, 0.55fr)) repeat(2, minmax(105px, 0.8fr));
+  min-width: 900px;
+}
+
+.daily-history-row > span:nth-child(n + 4) {
+  font-variant-numeric: tabular-nums;
+}
+
+.daily-history-row > span:nth-last-child(-n + 2) {
+  color: #216b57;
+  font-weight: 700;
+}
+
 .permissions-head,
 .permissions-row {
   grid-template-columns: 1.1fr 1fr 1fr 0.7fr;
