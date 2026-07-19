@@ -5,6 +5,7 @@ export type PlaceRankKeyword = {
   placeId: string;
   active: boolean;
   createdAt: string;
+  providerSlotId?: string;
 };
 
 export type PlaceRankSnapshot = {
@@ -73,6 +74,7 @@ export async function loadPlaceRankData(db: D1Database, hospitalId: string, star
             placeId: String(value.placeId),
             active: value.active !== false,
             createdAt: String(value.createdAt || row.createdAt),
+            providerSlotId: value.providerSlotId ? String(value.providerSlotId) : undefined,
           });
         }
       }

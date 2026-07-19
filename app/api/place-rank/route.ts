@@ -51,6 +51,14 @@ type RankfreeSlot = {
   placeId?: string | number;
   last_rank?: number | null;
   history?: unknown;
+  [key: string]: unknown;
+};
+
+type RankfreeSyncResult = {
+  imported: number;
+  matchedSlots: number;
+  slotCount: number;
+  error?: string;
 };
 
 type ProviderPlaceItem = {
@@ -174,7 +182,7 @@ function resolveProviderRank(payload: ProviderPayload, keyword: PlaceRankKeyword
     return { rank: null, blocked: true, outsideTop100: false, message: "검색 결과를 한 건도 읽지 못해 순위를 확인할 수 없습니다." };
   }
   const measuredRank = explicitProviderRank(body);
-  const rank = Number.isInteger(measuredRank) && measuredRank >= 1 && measuredRank <= 100 ? measuredRank : null;
+  const rank = typeof measuredRank === "number" && Number.isInteger(measuredRank) && measuredRank >= 1 && measuredRank <= 100 ? measuredRank : null;
   const outsideTop100 = body.blocked !== true && rank === null && completedTop100Scan(body);
   return {
     rank,
@@ -237,41 +245,115 @@ async function registerRankfreeSlot(runtimeEnv: RuntimeEnv, keyword: PlaceRankKe
     },
     body: JSON.stringify({ place: keyword.placeUrl, keywords: [keyword.keyword], label: keyword.keyword }),
   });
-  const payload = await response.json().catch(() => ({})) as { created?: unknown[]; skipped?: unknown[]; message?: string; error?: string };
+  const payload = await response.json().catch(() => ({})) as { created?: unknown[]; skipped?: unknown[]; message?: string; error?: string; data?: unknown };
   if (!response.ok && response.status !== 409) {
     throw new Error(payload.message || payload.error || `랭크프리 추적 등록 실패 (HTTP ${response.status})`);
   }
+  const registeredSlot = rankfreeSlots(payload).find((slot) => rankfreeSlotMatches(slot, keyword));
   return {
     registered: true,
     provider: "rankfree",
     created: Array.isArray(payload.created) ? payload.created.length : 0,
     skipped: Array.isArray(payload.skipped) ? payload.skipped.length : 0,
+    slotId: registeredSlot ? rankfreeSlotId(registeredSlot) : undefined,
   };
 }
 
 function rankfreeSlots(payload: unknown): RankfreeSlot[] {
-  if (Array.isArray(payload)) return payload as RankfreeSlot[];
-  if (!payload || typeof payload !== "object") return [];
-  const record = payload as Record<string, unknown>;
-  for (const key of ["data", "slots", "items", "results"]) {
-    if (Array.isArray(record[key])) return record[key] as RankfreeSlot[];
-  }
-  return [];
+  const visited = new Set<object>();
+  const find = (value: unknown, depth: number): RankfreeSlot[] => {
+    if (!value || typeof value !== "object" || depth > 6 || visited.has(value as object)) return [];
+    visited.add(value as object);
+    if (Array.isArray(value)) {
+      const candidates = value.filter((row): row is RankfreeSlot => Boolean(row && typeof row === "object"));
+      if (candidates.some((row) => ["keyword", "query", "keyword_name", "history", "rank_history", "slot_id"].some((key) => key in row))) return candidates;
+      for (const item of value) {
+        const nested = find(item, depth + 1);
+        if (nested.length) return nested;
+      }
+      return [];
+    }
+    const record = value as Record<string, unknown>;
+    for (const key of ["slots", "data", "items", "results", "records"]) {
+      const nested = find(record[key], depth + 1);
+      if (nested.length) return nested;
+    }
+    for (const nestedValue of Object.values(record)) {
+      const nested = find(nestedValue, depth + 1);
+      if (nested.length) return nested;
+    }
+    return [];
+  };
+  return find(payload, 0);
 }
 
-function rankfreeHistory(value: unknown) {
-  if (Array.isArray(value)) return value;
+function nestedString(value: unknown, keys: string[], depth = 0): string {
+  if (!value || typeof value !== "object" || depth > 4) return "";
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const found = record[key];
+    if (typeof found === "string" || typeof found === "number") return String(found);
+  }
+  for (const key of ["place", "keyword_data", "keywordData", "target", "data"]) {
+    const found = nestedString(record[key], keys, depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
+function rankfreeSlotKeyword(slot: RankfreeSlot) {
+  return nestedString(slot, ["keyword", "query", "keyword_name", "keywordName", "search_keyword"]);
+}
+
+function rankfreeSlotPlaceId(slot: RankfreeSlot) {
+  const direct = nestedString(slot, ["place_id", "placeId", "naver_place_id", "naverPlaceId"]);
+  if (direct) return direct;
+  const url = nestedString(slot, ["place_url", "placeUrl", "url"]);
+  return url ? extractNaverPlaceId(url) : "";
+}
+
+function rankfreeSlotId(slot: RankfreeSlot) {
+  return nestedString(slot, ["slot_id", "slotId", "id"]);
+}
+
+function rankfreeSlotMatches(slot: RankfreeSlot, keyword: PlaceRankKeyword) {
+  if (keyword.providerSlotId && rankfreeSlotId(slot) === keyword.providerSlotId) return true;
+  const slotKeyword = normalizedKeyword(rankfreeSlotKeyword(slot));
+  const slotPlaceId = rankfreeSlotPlaceId(slot);
+  return slotKeyword === normalizedKeyword(keyword.keyword) && (!slotPlaceId || slotPlaceId === keyword.placeId);
+}
+
+function rankfreeSlotHistory(slot: RankfreeSlot) {
+  for (const key of ["history", "rank_history", "rankHistory", "daily_history", "dailyHistory", "histories", "ranks"]) {
+    if (slot[key] !== undefined) return slot[key];
+  }
+  return undefined;
+}
+
+function rankfreeHistory(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value.flatMap((item) => rankfreeHistory(item));
   if (!value || typeof value !== "object") return [];
-  return Object.entries(value as Record<string, unknown>).map(([date, rank]) => ({ date, rank }));
+  const record = value as Record<string, unknown>;
+  const hasDate = ["date", "day", "checked_at", "checkedAt", "measured_at", "measuredAt", "created_at", "createdAt"].some((key) => record[key] !== undefined);
+  const hasRank = ["rank", "value", "position", "ranking", "place_rank", "natural_rank", "organic_rank"].some((key) => record[key] !== undefined);
+  if (hasDate && hasRank) return [record];
+  const dateEntries = Object.entries(record).filter(([key]) => /^\d{4}[-./]\d{2}[-./]\d{2}$/.test(key));
+  if (dateEntries.length) return dateEntries.map(([date, rank]) => rank && typeof rank === "object" ? { ...(rank as Record<string, unknown>), date } : { date, rank });
+  for (const key of ["history", "rank_history", "rankHistory", "daily_history", "dailyHistory", "histories", "ranks", "data", "items", "results", "records"]) {
+    const nested: unknown[] = rankfreeHistory(record[key]);
+    if (nested.length) return nested;
+  }
+  return [];
 }
 
 function rankfreeHistorySnapshot(keyword: PlaceRankKeyword, value: unknown): PlaceRankSnapshot | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
-  const checkedValue = String(row.checked_at ?? row.checkedAt ?? row.created_at ?? row.createdAt ?? "");
-  const dateValue = String(row.date ?? row.day ?? (checkedValue ? dateInSeoul(checkedValue) : ""));
+  const checkedValue = String(row.checked_at ?? row.checkedAt ?? row.measured_at ?? row.measuredAt ?? row.updated_at ?? row.updatedAt ?? row.created_at ?? row.createdAt ?? "");
+  const rawDate = String(row.date ?? row.day ?? (checkedValue ? dateInSeoul(checkedValue) : ""));
+  const dateValue = rawDate.replace(/[./]/g, "-");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return null;
-  const measuredRank = Number(row.rank ?? row.value ?? row.position);
+  const measuredRank = Number(row.rank ?? row.value ?? row.position ?? row.ranking ?? row.place_rank ?? row.natural_rank ?? row.organic_rank);
   if (measuredRank === -429) {
     return {
       keywordId: keyword.id,
@@ -310,43 +392,59 @@ async function syncRankfreeSlotHistory(
   access: { userId: string },
   keywords: PlaceRankKeyword[],
   snapshots: PlaceRankSnapshot[],
-) {
-  if (!runtimeEnv.RANKFREE_API_KEY || keywords.length === 0) return 0;
+): Promise<RankfreeSyncResult> {
+  if (!runtimeEnv.RANKFREE_API_KEY || keywords.length === 0) return { imported: 0, matchedSlots: 0, slotCount: 0 };
   const response = await fetch("https://rankfree.kr/api/v1/rank/slots", {
     headers: { authorization: `Bearer ${runtimeEnv.RANKFREE_API_KEY}` },
   });
-  if (!response.ok) return 0;
-  const payload = await response.json().catch(() => ({}));
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) {
+    return { imported: 0, matchedSlots: 0, slotCount: 0, error: String(payload.message ?? payload.error ?? `랭크프리 이력 조회 실패 (HTTP ${response.status})`) };
+  }
   const slots = rankfreeSlots(payload);
-  const existing = new Set(snapshots.map((row) => `${row.keywordId}:${row.date}`));
+  const existing = new Map(snapshots.map((row) => [`${row.keywordId}:${row.date}`, row]));
   let imported = 0;
+  let matchedSlots = 0;
   for (const keyword of keywords) {
-    const normalized = normalizedKeyword(keyword.keyword);
-    const slot = slots.find((row) => {
-      const slotKeyword = normalizedKeyword(String(row.keyword ?? ""));
-      const slotPlaceId = String(row.place_id ?? row.placeId ?? "");
-      return slotKeyword === normalized && (!slotPlaceId || slotPlaceId === keyword.placeId);
-    });
+    const slot = slots.find((row) => rankfreeSlotMatches(row, keyword));
     if (!slot) continue;
-    for (const value of rankfreeHistory(slot.history)) {
+    matchedSlots += 1;
+    for (const value of rankfreeHistory(rankfreeSlotHistory(slot))) {
       const snapshot = rankfreeHistorySnapshot(keyword, value);
-      if (!snapshot || existing.has(`${keyword.id}:${snapshot.date}`)) continue;
+      if (!snapshot) continue;
+      const key = `${keyword.id}:${snapshot.date}`;
+      const current = existing.get(key);
+      if (current?.status === "manual") continue;
+      if (current && current.status === snapshot.status && current.rank === snapshot.rank && current.outsideTop100 === snapshot.outsideTop100) continue;
       await writeAudit(runtimeEnv, access, "place_rank_snapshot", keyword.id, snapshot);
-      existing.add(`${keyword.id}:${snapshot.date}`);
+      existing.set(key, snapshot);
       imported += 1;
     }
   }
-  return imported;
+  return { imported, matchedSlots, slotCount: slots.length, error: slots.length === 0 ? "랭크프리에서 추적 슬롯을 찾지 못했습니다." : undefined };
+}
+
+async function findRankfreeSlot(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword) {
+  if (!runtimeEnv.RANKFREE_API_KEY) return null;
+  const response = await fetch("https://rankfree.kr/api/v1/rank/slots", { headers: { authorization: `Bearer ${runtimeEnv.RANKFREE_API_KEY}` } });
+  if (!response.ok) return null;
+  const payload = await response.json().catch(() => ({}));
+  return rankfreeSlots(payload).find((slot) => rankfreeSlotMatches(slot, keyword)) ?? null;
 }
 
 async function measureWithRankfree(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword, trigger: "scheduled" | "manual"): Promise<PlaceRankSnapshot> {
-  const response = await fetch("https://rankfree.kr/api/v1/rank/check", {
+  const slot = await findRankfreeSlot(runtimeEnv, keyword);
+  const slotId = slot ? rankfreeSlotId(slot) : "";
+  const endpoint = trigger === "manual" && slotId
+    ? `https://rankfree.kr/api/v1/rank/slots/${encodeURIComponent(slotId)}/run`
+    : "https://rankfree.kr/api/v1/rank/check";
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       authorization: `Bearer ${runtimeEnv.RANKFREE_API_KEY}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ keyword: keyword.keyword, place: keyword.placeUrl }),
+    body: slotId && trigger === "manual" ? undefined : JSON.stringify({ keyword: keyword.keyword, place: keyword.placeUrl }),
   });
   const payload = await response.json().catch(() => ({})) as RankfreeRankPayload;
   const result = payload.data && typeof payload.data === "object" ? payload.data : payload;
@@ -377,7 +475,7 @@ async function measureWithRankfree(runtimeEnv: RuntimeEnv, keyword: PlaceRankKey
     trigger,
     checkedCount: outsideTop100 ? Math.max(100, Number(result.list_total) || 300) : Number(result.list_total) || undefined,
     maxRank: 300,
-    message: outsideTop100 ? "100위 밖" : "랭크프리 순위 조회",
+    message: outsideTop100 ? "100위 밖" : trigger === "manual" && slotId ? "랭크프리 추적 슬롯 수동 측정" : "랭크프리 순위 조회",
   };
 }
 
@@ -552,7 +650,7 @@ async function collectMissingToday(runtimeEnv: RuntimeEnv, access: { userId: str
   if (seoulHour() < 9) return;
   const today = seoulDate();
   const measuredToday = new Set(snapshots
-    .filter((row) => row.date === today && row.source === "authorized-provider" && row.rankMethod === "provider-absolute")
+    .filter((row) => row.date === today && row.source === "authorized-provider" && row.rankMethod === "provider-absolute" && row.status === "measured")
     .map((row) => row.keywordId));
   for (const keyword of keywords.filter((row) => row.active && !measuredToday.has(row.id))) {
     try {
@@ -589,9 +687,9 @@ export async function GET(request: Request) {
       return Response.json({ error: "올바른 조회 기간이 필요합니다." }, { status: 400 });
     }
     const allData = await loadPlaceRankData(runtimeEnv.DB, hospitalId, "2000-01-01", "2999-12-31");
-    const scheduledImported = runtimeEnv.RANKFREE_API_KEY
-      ? await syncRankfreeSlotHistory(runtimeEnv, access, allData.keywords, allData.snapshots).catch(() => 0)
-      : await syncScheduledRuns(runtimeEnv, access, allData.keywords, allData.snapshots).catch(() => 0);
+    const trackingSync: RankfreeSyncResult = runtimeEnv.RANKFREE_API_KEY
+      ? await syncRankfreeSlotHistory(runtimeEnv, access, allData.keywords, allData.snapshots).catch((error) => ({ imported: 0, matchedSlots: 0, slotCount: 0, error: error instanceof Error ? error.message : "랭크프리 이력을 동기화하지 못했습니다." }))
+      : { imported: await syncScheduledRuns(runtimeEnv, access, allData.keywords, allData.snapshots).catch(() => 0), matchedSlots: 0, slotCount: 0 };
     let data = await loadPlaceRankData(runtimeEnv.DB, hospitalId, start!, end!);
     if (url.searchParams.get("collect") === "today") {
       await collectMissingToday(runtimeEnv, access, data.keywords, data.snapshots);
@@ -607,7 +705,8 @@ export async function GET(request: Request) {
       collectionAvailable: seoulHour() >= 9,
       maxRank: 100,
       excludesSponsored: true,
-      scheduledImported,
+      scheduledImported: trackingSync.imported,
+      trackingSync,
       syncedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -635,11 +734,12 @@ export async function POST(request: Request) {
       if (!keyword) return Response.json({ error: "추적할 검색 키워드를 입력해 주세요." }, { status: 400 });
       if (!placeId) return Response.json({ error: "네이버 지도 또는 모바일 플레이스의 숫자 Place ID가 포함된 주소를 입력해 주세요." }, { status: 400 });
       const id = body.id || crypto.randomUUID();
-      const value: PlaceRankKeyword = { id, keyword, placeUrl, placeId, active: true, createdAt: new Date().toISOString() };
-      await writeAudit(runtimeEnv, access, "place_rank_keyword_saved", id, value);
+      const baseValue: PlaceRankKeyword = { id, keyword, placeUrl, placeId, active: true, createdAt: new Date().toISOString() };
       const tracking = runtimeEnv.RANKFREE_API_KEY
-        ? await registerRankfreeSlot(runtimeEnv, value)
+        ? await registerRankfreeSlot(runtimeEnv, baseValue)
         : { registered: false, provider: null };
+      const value: PlaceRankKeyword = { ...baseValue, providerSlotId: "slotId" in tracking ? tracking.slotId : undefined };
+      await writeAudit(runtimeEnv, access, "place_rank_keyword_saved", id, value);
       return Response.json({ saved: true, keyword: value, tracking });
     }
 

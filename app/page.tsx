@@ -184,6 +184,7 @@ type PlaceRankKeyword = {
   placeId: string;
   active: boolean;
   createdAt: string;
+  providerSlotId?: string;
 };
 
 type PlaceRankData = {
@@ -199,6 +200,12 @@ type PlaceRankData = {
   excludesSponsored: boolean;
   syncedAt: string;
   scheduledImported: number;
+  trackingSync?: {
+    imported: number;
+    matchedSlots: number;
+    slotCount: number;
+    error?: string;
+  };
 };
 
 type RankfreeInsights = {
@@ -1088,7 +1095,9 @@ export default function Home() {
           setPlaceRankLoadState("live");
           setSelectedPlaceRankId((current) => body.keywords.some((row) => row.id === current) ? current : body.keywords[0]?.id ?? "");
           setPlaceRankMessage(body.providerConfigured
-            ? "등록 키워드는 매일 09:00 기준으로 자동 측정하며 선택 기간의 기록을 표시합니다."
+            ? body.trackingSync?.error
+              ? `추적 동기화 확인 필요 · ${body.trackingSync.error}`
+              : `랭크프리 추적 ${body.trackingSync?.matchedSlots ?? 0}/${body.keywords.length}개 연결 · 매일 09:00 자동 반영`
             : "자동 측정 공급자 미연동 · 수동 기록은 즉시 사용할 수 있습니다.");
         });
       })
@@ -3830,6 +3839,7 @@ export default function Home() {
           <article><span>자동 측정</span><strong>{placeRankData?.providerConfigured ? "매일 09:00" : "사용 안 함"}</strong></article>
           <article><span>마지막 동기화</span><strong>{placeRankData?.syncedAt ? formatPlaceRankCheckedAt(placeRankData.syncedAt) : "-"}</strong></article>
           <article><span>이번 동기화 반영</span><strong>{placeRankData?.scheduledImported ?? 0}건</strong></article>
+          <article><span>추적 슬롯 매칭</span><strong>{placeRankData ? `${placeRankData.trackingSync?.matchedSlots ?? 0}/${placeRankData.keywords.length}개` : "-"}</strong></article>
           <article><span>키워드 분석</span><strong>{rankfreeInsights?.keywordStatus === "available" ? "사용 가능" : rankfreeInsights?.keywordStatus === "scope-required" ? "권한 필요" : "확인 필요"}</strong></article>
           <article><span>경쟁 분석</span><strong>{rankfreeInsights?.competitionStatus === "available" ? "사용 가능" : rankfreeInsights?.competitionStatus === "not-analyzed" ? "분석 기록 없음" : rankfreeInsights?.competitionStatus === "scope-required" ? "권한 필요" : "확인 필요"}</strong></article>
         </div>
