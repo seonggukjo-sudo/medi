@@ -607,6 +607,18 @@ function pointsFromSeries(values: number[], width: number, height: number, paddi
   });
 }
 
+function pearsonCorrelation(left: number[], right: number[]) {
+  if (left.length !== right.length || left.length < 3) return null;
+  const leftMean = left.reduce((sum, value) => sum + value, 0) / left.length;
+  const rightMean = right.reduce((sum, value) => sum + value, 0) / right.length;
+  const numerator = left.reduce((sum, value, index) => sum + (value - leftMean) * (right[index] - rightMean), 0);
+  const leftVariance = left.reduce((sum, value) => sum + (value - leftMean) ** 2, 0);
+  const rightVariance = right.reduce((sum, value) => sum + (value - rightMean) ** 2, 0);
+  const denominator = Math.sqrt(leftVariance * rightVariance);
+  if (denominator === 0) return null;
+  return Math.round((numerator / denominator) * 100) / 100;
+}
+
 function donutGradient(items: Array<{ value: number; color: string }>) {
   const total = items.reduce((sum, item) => sum + item.value, 0) || 1;
   let current = 0;
@@ -1980,6 +1992,26 @@ export default function Home() {
   const activeKpiSalesTrend = useMemo(() => activeKpiRows.map((row) => row.sales), [activeKpiRows]);
   const activeKpiSpendTrend = useMemo(() => activeKpiRows.map((row) => row.adSpend), [activeKpiRows]);
   const activeKpiRoasTrend = useMemo(() => activeKpiRows.map((row) => row.adSpend > 0 ? Math.round((row.sales / row.adSpend) * 100) : 0), [activeKpiRows]);
+  const marketingCorrelationRows = useMemo(() => {
+    const definitions = [
+      { label: "광고비 ↔ 문의", left: activeKpiRows.map((row) => row.adSpend), right: activeKpiRows.map((row) => row.inquiries), use: "광고 지출과 상담 유입의 동행 여부" },
+      { label: "문의 ↔ 예약", left: activeKpiRows.map((row) => row.inquiries), right: activeKpiRows.map((row) => row.reservations), use: "상담 수요가 예약으로 이어지는 안정성" },
+      { label: "예약 ↔ 내원", left: activeKpiRows.map((row) => row.reservations), right: activeKpiRows.map((row) => row.visits), use: "예약 이후 실제 방문 연결 정도" },
+      { label: "광고비 ↔ 매출", left: activeKpiRows.map((row) => row.adSpend), right: activeKpiRows.map((row) => row.sales), use: "지출과 당일 매출의 동행 여부" },
+    ];
+    return definitions.map((item) => {
+      const coefficient = pearsonCorrelation(item.left, item.right);
+      const strength = coefficient === null
+        ? "분석 보류"
+        : Math.abs(coefficient) >= 0.7
+          ? "강한 관계"
+          : Math.abs(coefficient) >= 0.4
+            ? "보통 관계"
+            : "약한 관계";
+      const direction = coefficient === null ? "데이터 변동 부족" : coefficient >= 0 ? "같은 방향" : "반대 방향";
+      return { ...item, coefficient, strength, direction };
+    });
+  }, [activeKpiRows]);
   const activeKpiWeekdays = useMemo(() => {
     const labels = ["월", "화", "수", "목", "금", "토", "일"];
     return labels.map((label, index) => {
@@ -2462,6 +2494,25 @@ export default function Home() {
             {!activeKpiRows.length ? <text x="300" y="116" textAnchor="middle" className="axis-empty-label">선택 기간의 매출·광고비 데이터가 없습니다.</text> : null}
           </svg>
         </article>
+      </section>
+
+      <section className="panel marketing-correlation-panel">
+        <ChartHeader title="마케팅 · CRM 상관관계 진단" right={<span className="chart-period-note">{activeKpiRows.length}일 데이터</span>} />
+        <p className="table-helper">같은 날짜의 지표가 함께 움직였는지 확인합니다. 상관계수는 원인을 증명하지 않으며, 캠페인 지연 효과와 외부 요인은 별도 검증이 필요합니다.</p>
+        <div className="correlation-grid">
+          {marketingCorrelationRows.map((row) => (
+            <article className={`correlation-card ${row.coefficient === null ? "pending" : row.coefficient < 0 ? "negative" : "positive"}`} key={row.label}>
+              <div><span>{row.label}</span><b>{row.strength}</b></div>
+              <strong>{row.coefficient === null ? "계산 불가" : row.coefficient.toFixed(2)}</strong>
+              <div className="correlation-track"><i style={{ width: `${row.coefficient === null ? 0 : Math.abs(row.coefficient) * 100}%` }} /></div>
+              <small>{row.direction} · {row.use}</small>
+            </article>
+          ))}
+        </div>
+        <footer className="correlation-footer">
+          <span>기준: Pearson 상관계수 · |0.7| 이상 강함 · |0.4| 이상 보통</span>
+          <strong>{activeKpiRows.length < 3 ? "최소 3일 데이터가 필요합니다." : "동일 일자 기준이며 인과관계로 해석하지 않습니다."}</strong>
+        </footer>
       </section>
 
       <article className="panel weekly-panel">
