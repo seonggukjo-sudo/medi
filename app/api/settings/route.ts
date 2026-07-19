@@ -96,12 +96,22 @@ export async function POST(request: Request) {
       else normalizedUsers.push({ email: access.email, name: access.name, role: "owner" });
     }
 
-    const existingResult = await env.DB.prepare("SELECT email, name, role, last_login_at AS lastLoginAt, created_at AS createdAt FROM users WHERE hospital_id = ? AND status = 'active'")
-      .bind(hospitalId)
-      .all();
+    const [existingResult, existingSettingsRow] = await Promise.all([
+      env.DB.prepare("SELECT email, name, role, last_login_at AS lastLoginAt, created_at AS createdAt FROM users WHERE hospital_id = ? AND status = 'active'")
+        .bind(hospitalId)
+        .all(),
+      env.DB.prepare("SELECT alert_policy_json AS settingsJson FROM hospital_settings WHERE hospital_id = ?")
+        .bind(hospitalId)
+        .first<{ settingsJson: string }>(),
+    ]);
     const existingUsers = existingResult.results as Array<{ email: string; name: string; role: DashboardRole; lastLoginAt: string | null; createdAt: string }>;
     const existingByEmail = new Map(existingUsers.map((user) => [user.email.toLowerCase(), user]));
     const nextByEmail = new Map(normalizedUsers.map((user) => [user.email, user]));
+    const previousSettings = { ...defaultSettings, ...parseJson<Record<string, unknown>>(existingSettingsRow?.settingsJson, {}) };
+    const previousTargets = Array.isArray(previousSettings.kpiTargets) ? previousSettings.kpiTargets as Array<Record<string, unknown>> : [];
+    const nextTargets = Array.isArray(body.settings.kpiTargets) ? body.settings.kpiTargets as Array<Record<string, unknown>> : [];
+    const previousTargetByMetric = new Map(previousTargets.map((target) => [String(target.metric || ""), target]));
+    const nextTargetByMetric = new Map(nextTargets.map((target) => [String(target.metric || ""), target]));
 
     const now = new Date().toISOString();
     const statements = [
@@ -126,6 +136,27 @@ export async function POST(request: Request) {
       if (nextByEmail.has(existing.email.toLowerCase())) continue;
       statements.push(env.DB.prepare("INSERT INTO audit_logs (log_id, hospital_id, user_id, action, target_type, target_id, created_at, metadata_json) VALUES (?, ?, ?, 'user_removed', 'users', ?, ?, ?)")
         .bind(crypto.randomUUID(), hospitalId, access.email, existing.email, now, JSON.stringify({ email: existing.email, name: existing.name, beforeRole: roleLabels[existing.role], afterRole: null })));
+    }
+    for (const metric of new Set([...previousTargetByMetric.keys(), ...nextTargetByMetric.keys()])) {
+      if (!metric) continue;
+      const before = previousTargetByMetric.get(metric);
+      const after = nextTargetByMetric.get(metric);
+      if (JSON.stringify(before ?? null) === JSON.stringify(after ?? null)) continue;
+      const summarize = (target?: Record<string, unknown>) => target
+        ? `병원 ${String(target.hospital || "-")} · 진료과목 ${String(target.department || "-")} · 매체 ${String(target.channel || "-")}`
+        : "설정 없음";
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (log_id, hospital_id, user_id, action, target_type, target_id, created_at, metadata_json) VALUES (?, ?, ?, 'kpi_target_changed', 'settings', ?, ?, ?)")
+        .bind(crypto.randomUUID(), hospitalId, access.email, `kpi:${metric}`, now, JSON.stringify({ metric, beforeValue: summarize(before), afterValue: summarize(after), detail: `${summarize(before)} → ${summarize(after)}` })));
+    }
+    const previousAi = previousSettings.aiSettings && typeof previousSettings.aiSettings === "object" ? previousSettings.aiSettings as Record<string, unknown> : {};
+    const nextAi = body.settings.aiSettings && typeof body.settings.aiSettings === "object" ? body.settings.aiSettings as Record<string, unknown> : {};
+    const aiFields: Array<[string, string]> = [["enabled", "사용 여부"], ["frequency", "분석 주기"], ["compare", "비교 기준"], ["anomaly", "이상 변화"], ["recommendation", "추천 수준"]];
+    const aiChanges = aiFields
+      .filter(([field]) => String(previousAi[field] ?? "-") !== String(nextAi[field] ?? "-"))
+      .map(([field, label]) => `${label} ${String(previousAi[field] ?? "-")} → ${String(nextAi[field] ?? "-")}`);
+    if (aiChanges.length > 0) {
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (log_id, hospital_id, user_id, action, target_type, target_id, created_at, metadata_json) VALUES (?, ?, ?, 'ai_settings_changed', 'settings', 'ai-analysis', ?, ?)")
+        .bind(crypto.randomUUID(), hospitalId, access.email, now, JSON.stringify({ detail: aiChanges.join(" · ") })));
     }
     statements.push(env.DB.prepare("INSERT INTO audit_logs (log_id, hospital_id, user_id, action, target_type, target_id, created_at, metadata_json) VALUES (?, ?, ?, 'settings_saved', 'settings', ?, ?, ?)")
       .bind(crypto.randomUUID(), hospitalId, access.email, hospitalId, now, JSON.stringify({ userCount: normalizedUsers.length, ownerCount: normalizedUsers.filter((user) => user.role === "owner").length, changedByRole: access.role })));

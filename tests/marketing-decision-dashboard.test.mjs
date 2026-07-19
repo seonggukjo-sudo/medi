@@ -153,3 +153,17 @@ test("사용자 추가 삭제 권한 변경을 상세 감사 이력으로 보존
   assert.match(page, /신규/);
   assert.match(page, /최고관리자/);
 });
+
+test("KPI 목표와 AI 분석 기준의 변경 전후 값을 감사 이력에 남긴다", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/settings/route.ts", import.meta.url), "utf8");
+  assert.match(route, /kpi_target_changed/);
+  assert.match(route, /ai_settings_changed/);
+  assert.match(route, /beforeValue/);
+  assert.match(route, /afterValue/);
+  assert.match(route, /분석 주기/);
+  assert.match(route, /비교 기준/);
+  assert.match(page, /KPI 목표 변경/);
+  assert.match(page, /AI 분석 기준 변경/);
+  assert.match(page, /row\.metadata\?\.detail/);
+});

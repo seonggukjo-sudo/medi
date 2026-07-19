@@ -356,7 +356,7 @@ type SettingsHistoryRow = {
   action: string;
   targetId?: string;
   createdAt: string;
-  metadata?: { userCount?: number; ownerCount?: number; email?: string; name?: string; beforeRole?: string | null; afterRole?: string | null };
+  metadata?: { userCount?: number; ownerCount?: number; email?: string; name?: string; beforeRole?: string | null; afterRole?: string | null; metric?: string; beforeValue?: string; afterValue?: string; detail?: string };
 };
 
 const settingsActionLabels: Record<string, string> = {
@@ -365,6 +365,8 @@ const settingsActionLabels: Record<string, string> = {
   user_removed: "사용자 삭제",
   user_role_changed: "권한 변경",
   user_profile_changed: "사용자 정보 변경",
+  kpi_target_changed: "KPI 목표 변경",
+  ai_settings_changed: "AI 분석 기준 변경",
 };
 
 const initialKpiTargets: KpiTargetRow[] = [
@@ -4133,7 +4135,9 @@ export default function Home() {
               <span>{settingsActionLabels[row.action] ?? row.action}</span>
               <strong>{row.metadata?.email
                 ? `${row.metadata.email}${row.metadata.beforeRole !== row.metadata.afterRole ? ` · ${row.metadata.beforeRole ?? "신규"} → ${row.metadata.afterRole ?? "삭제"}` : ""}`
-                : row.metadata?.userCount !== undefined ? `사용자 ${row.metadata.userCount}명 · 최고관리자 ${row.metadata.ownerCount ?? "-"}명` : row.targetId ?? "-"}</strong>
+                : row.metadata?.detail
+                  ? `${row.metadata.metric ? `${row.metadata.metric} · ` : ""}${row.metadata.detail}`
+                  : row.metadata?.userCount !== undefined ? `사용자 ${row.metadata.userCount}명 · 최고관리자 ${row.metadata.ownerCount ?? "-"}명` : row.targetId ?? "-"}</strong>
             </div>
           ))}
           {settingsHistory.length === 0 ? <div className="data-empty-row">아직 저장된 변경 이력이 없습니다.</div> : null}
