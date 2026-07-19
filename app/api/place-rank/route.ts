@@ -327,7 +327,33 @@ function rankfreeSlotHistory(slot: RankfreeSlot) {
   for (const key of ["history", "rank_history", "rankHistory", "daily_history", "dailyHistory", "histories", "ranks"]) {
     if (slot[key] !== undefined) return slot[key];
   }
+  if (["rank", "last_rank", "position", "ranking"].some((key) => slot[key] !== undefined)) return [slot];
   return undefined;
+}
+
+function rankfreeRankResult(payload: unknown, depth = 0): RankfreeRankPayload {
+  if (!payload || typeof payload !== "object" || depth > 5) return {};
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const result = rankfreeRankResult(item, depth + 1);
+      if (result.rank !== undefined) return result;
+    }
+    return {};
+  }
+  const record = payload as Record<string, unknown>;
+  const rank = record.rank ?? record.last_rank ?? record.position ?? record.ranking;
+  if (rank !== undefined) {
+    return {
+      ...(record as RankfreeRankPayload),
+      rank: Number(rank),
+      checked_at: String(record.checked_at ?? record.checkedAt ?? record.measured_at ?? record.updated_at ?? record.last_checked_at ?? "") || undefined,
+    };
+  }
+  for (const key of ["data", "result", "slot", "item", "record"]) {
+    const result = rankfreeRankResult(record[key], depth + 1);
+    if (result.rank !== undefined) return result;
+  }
+  return {};
 }
 
 function rankfreeHistory(value: unknown): unknown[] {
@@ -353,7 +379,7 @@ function rankfreeHistorySnapshot(keyword: PlaceRankKeyword, value: unknown): Pla
   const rawDate = String(row.date ?? row.day ?? (checkedValue ? dateInSeoul(checkedValue) : ""));
   const dateValue = rawDate.replace(/[./]/g, "-");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return null;
-  const measuredRank = Number(row.rank ?? row.value ?? row.position ?? row.ranking ?? row.place_rank ?? row.natural_rank ?? row.organic_rank);
+  const measuredRank = Number(row.rank ?? row.last_rank ?? row.value ?? row.position ?? row.ranking ?? row.place_rank ?? row.natural_rank ?? row.organic_rank);
   if (measuredRank === -429) {
     return {
       keywordId: keyword.id,
@@ -447,7 +473,7 @@ async function measureWithRankfree(runtimeEnv: RuntimeEnv, keyword: PlaceRankKey
     body: slotId && trigger === "manual" ? undefined : JSON.stringify({ keyword: keyword.keyword, place: keyword.placeUrl }),
   });
   const payload = await response.json().catch(() => ({})) as RankfreeRankPayload;
-  const result = payload.data && typeof payload.data === "object" ? payload.data : payload;
+  const result = rankfreeRankResult(payload);
   if (response.status === 429 || result.blocked || Number(result.rank) === -429) {
     throw new Error(result.message || result.error || "랭크프리 조회가 일시적으로 제한되었습니다.");
   }
