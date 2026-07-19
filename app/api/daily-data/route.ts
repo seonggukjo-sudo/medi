@@ -21,14 +21,17 @@ function normalizeRow(value: Partial<DailyMetricOverride>) {
 export async function POST(request: Request) {
   try {
     const access = await requireAccess(request, hospitalId, ["owner", "admin", "marketer"]);
-    const body = await request.json() as { rows?: Partial<DailyMetricOverride>[] };
+    const body = await request.json() as { rows?: Partial<DailyMetricOverride>[]; reason?: string };
     const rows = (body.rows ?? []).map(normalizeRow);
     if (!rows.length) return Response.json({ error: "저장할 변경사항이 없습니다." }, { status: 400 });
+    const reason = String(body.reason ?? "").trim();
+    if (reason.length < 2) return Response.json({ error: "수정 사유를 2자 이상 입력해 주세요." }, { status: 400 });
+    if (reason.length > 200) return Response.json({ error: "수정 사유는 200자 이내로 입력해 주세요." }, { status: 400 });
 
     const createdAt = new Date().toISOString();
     await env.DB.batch(rows.map((row) => env.DB.prepare(
       "INSERT INTO audit_logs (log_id, hospital_id, user_id, action, target_type, target_id, created_at, metadata_json) VALUES (?, ?, ?, 'daily_metrics_override', 'daily_metrics', ?, ?, ?)",
-    ).bind(crypto.randomUUID(), hospitalId, access.userId, row.date, createdAt, JSON.stringify(row))));
+    ).bind(crypto.randomUUID(), hospitalId, access.userId, row.date, createdAt, JSON.stringify({ ...row, reason }))));
 
     return Response.json({ saved: rows.length, updatedAt: createdAt });
   } catch (error) {

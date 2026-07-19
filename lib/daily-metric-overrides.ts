@@ -7,6 +7,7 @@ export type DailyMetricOverride = {
   adSpend: number;
   updatedAt?: string;
   updatedBy?: string;
+  reason?: string;
 };
 
 type OverrideAuditRow = {
@@ -30,6 +31,7 @@ function parseOverrideAuditRow(row: OverrideAuditRow): DailyMetricOverride | nul
       adSpend: Math.max(0, Number(value.adSpend) || 0),
       updatedAt: row.createdAt,
       updatedBy: row.userId,
+      reason: String(value.reason ?? "").trim(),
     };
   } catch {
     return null;

@@ -5,6 +5,7 @@ import test from "node:test";
 const uploadRouteUrl = new URL("../app/api/uploads/route.ts", import.meta.url);
 const dataQualityRouteUrl = new URL("../app/api/data-quality/route.ts", import.meta.url);
 const dailyOverridesUrl = new URL("../lib/daily-metric-overrides.ts", import.meta.url);
+const dailyDataRouteUrl = new URL("../app/api/daily-data/route.ts", import.meta.url);
 const pageUrl = new URL("../app/page.tsx", import.meta.url);
 const updateDocUrl = new URL("../outputs/메디인사이트_운영저장구조_마이그레이션_업데이트.md", import.meta.url);
 
@@ -77,6 +78,22 @@ test("과거 일자별 값을 복원한 뒤 저장으로 확정할 수 있다", 
   assert.match(pageSource, /setIsDataDirty\(true\)/);
   assert.match(pageSource, /id="daily-data-table"/);
   assert.match(cssSource, /\.history-restore-button/);
+});
+
+test("일자별 수치 저장은 수정 사유를 검증하고 감사 이력에 남긴다", async () => {
+  const [routeSource, overrideSource, pageSource] = await Promise.all([
+    readFile(dailyDataRouteUrl, "utf8"),
+    readFile(dailyOverridesUrl, "utf8"),
+    readFile(pageUrl, "utf8"),
+  ]);
+
+  assert.match(routeSource, /수정 사유를 2자 이상 입력해 주세요/);
+  assert.match(routeSource, /수정 사유는 200자 이내/);
+  assert.match(routeSource, /JSON\.stringify\(\{ \.\.\.row, reason \}\)/);
+  assert.match(overrideSource, /reason: String\(value\.reason/);
+  assert.match(pageSource, /dailyEditReason/);
+  assert.match(pageSource, /수정 사유/);
+  assert.match(pageSource, /사유 미기록/);
 });
 
 test("업로드 화면과 운영 문서는 서버 저장 API 준비 상태를 안내한다", async () => {

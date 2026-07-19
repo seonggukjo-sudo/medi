@@ -344,7 +344,7 @@ type DataQuality = {
   totals: { inquiries: number; reservations: number; visits: number; sales: number; adSpend: number };
   daily: DailyDataRow[];
   overrides?: Array<DailyDataRow & { updatedAt?: string; updatedBy?: string }>;
-  overrideHistory?: Array<DailyDataRow & { updatedAt?: string; updatedBy?: string }>;
+  overrideHistory?: Array<DailyDataRow & { updatedAt?: string; updatedBy?: string; reason?: string }>;
   uploadSummary: { total: number; validated: number; review: number; errors: number };
   warnings: { missingLinks: number; duplicates: number };
   uploads: Array<{ batchId: string; uploadedAt: string; uploadedBy?: string; status: string; rowCount: number; errorCount: number; warningCount: number; fileName?: string; tableKey?: ImportTableKey; periodStart?: string; periodEnd?: string }>;
@@ -851,6 +851,7 @@ export default function Home() {
   const [isDataDirty, setIsDataDirty] = useState(false);
   const [editedDailyDates, setEditedDailyDates] = useState<string[]>([]);
   const [dailySaveState, setDailySaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [dailyEditReason, setDailyEditReason] = useState("");
   const [dataVisibleCount, setDataVisibleCount] = useState<7 | 14 | 30>(7);
   const [dataSort, setDataSort] = useState<"latest" | "inquiries" | "sales">("latest");
   const [dataSourceState, setDataSourceState] = useState<"loading" | "live" | "empty" | "error">("loading");
@@ -1235,6 +1236,7 @@ export default function Home() {
     setEditedDailyDates((current) => current.includes(row.date) ? current : [...current, row.date]);
     setIsDataDirty(true);
     setDailySaveState("idle");
+    setDailyEditReason(`과거 기록 복원 · ${row.date}`);
     setValidationResults(`${row.date} 과거 값을 편집 테이블에 복원했습니다. 저장 버튼을 눌러 최종 반영해 주세요.`);
     window.requestAnimationFrame(() => document.getElementById("daily-data-table")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
@@ -1254,18 +1256,23 @@ export default function Home() {
 
   const saveDailyData = async () => {
     if (!canManageData || !editedDailyDates.length) return;
+    if (dailyEditReason.trim().length < 2) {
+      setValidationResults("저장 전에 수정 사유를 2자 이상 입력해 주세요.");
+      return;
+    }
     setDailySaveState("saving");
     try {
       const rows = dailyData.filter((row) => editedDailyDates.includes(row.date));
       const response = await fetch("/api/daily-data", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rows }),
+        body: JSON.stringify({ rows, reason: dailyEditReason.trim() }),
       });
       const body = await response.json() as { saved?: number; error?: string };
       if (!response.ok) throw new Error(body.error || "일자별 수정값을 저장하지 못했습니다.");
       setEditedDailyDates([]);
       setIsDataDirty(false);
+      setDailyEditReason("");
       setDailySaveState("saved");
       setValidationResults(`일자별 수정값 ${body.saved ?? rows.length}건을 서버에 저장하고 변경 이력에 기록했습니다.`);
     } catch (error) {
@@ -3750,7 +3757,7 @@ export default function Home() {
       </section>
 
       <section className="panel table-panel uploaded-data-panel" id="daily-data-table">
-        <ChartHeader title="일자별 데이터 테이블" right={<div className="data-table-actions"><label className="table-filter">표시<select value={dataVisibleCount} onChange={(event) => setDataVisibleCount(Number(event.target.value) as 7 | 14 | 30)}><option value="7">최근 7개</option><option value="14">최근 14개</option><option value="30">최근 30개</option></select></label><label className="table-filter">정렬<select value={dataSort} onChange={(event) => setDataSort(event.target.value as "latest" | "inquiries" | "sales")}><option value="latest">최신순</option><option value="inquiries">상담 많은순</option><option value="sales">매출 높은순</option></select></label><button className="primary-button save-data-button" type="button" disabled={!canManageData || !isDataDirty || dailySaveState === "saving"} onClick={saveDailyData}>{dailySaveState === "saving" ? "저장 중" : isDataDirty ? `변경 ${editedDailyDates.length}일 저장` : dailySaveState === "saved" ? "저장 완료" : "수정 후 저장"}</button></div>} />
+        <ChartHeader title="일자별 데이터 테이블" right={<div className="data-table-actions"><label className="table-filter">표시<select value={dataVisibleCount} onChange={(event) => setDataVisibleCount(Number(event.target.value) as 7 | 14 | 30)}><option value="7">최근 7개</option><option value="14">최근 14개</option><option value="30">최근 30개</option></select></label><label className="table-filter">정렬<select value={dataSort} onChange={(event) => setDataSort(event.target.value as "latest" | "inquiries" | "sales")}><option value="latest">최신순</option><option value="inquiries">상담 많은순</option><option value="sales">매출 높은순</option></select></label><button className="primary-button save-data-button" type="button" disabled={!canManageData || !isDataDirty || dailyEditReason.trim().length < 2 || dailySaveState === "saving"} onClick={saveDailyData}>{dailySaveState === "saving" ? "저장 중" : isDataDirty ? `변경 ${editedDailyDates.length}일 저장` : dailySaveState === "saved" ? "저장 완료" : "수정 후 저장"}</button></div>} />
         <div className="data-period-toolbar">
           <strong>조회 기간</strong>
           <label><span>시작일</span><input type="date" value={customStartDate} onChange={(event) => setCustomStartDate(event.target.value)} /></label>
@@ -3759,6 +3766,7 @@ export default function Home() {
           <button className="pill" type="button" onClick={applyDataDateRange}>기간 적용</button>
           <small>{activeDateRange.start} ~ {activeDateRange.end} · {visibleDailyData.length}일 표시</small>
         </div>
+        <label className="daily-edit-reason"><span>수정 사유</span><input disabled={!canManageData} value={dailyEditReason} maxLength={200} onChange={(event) => setDailyEditReason(event.target.value)} placeholder={isDataDirty ? "저장 전에 수정 사유를 입력해 주세요." : "수치를 수정하면 사유 입력이 활성화됩니다."} /><small>{dailyEditReason.length}/200</small></label>
         <p className="table-helper">업로드된 원천 데이터의 일자별 합계입니다. 관리자와 마케팅 권한은 수치를 직접 수정할 수 있으며, 저장값과 수정자는 서버 변경 이력에 남습니다.</p>
         <div className="data-table">
           <div className="table-head daily-data-head">
@@ -3782,12 +3790,13 @@ export default function Home() {
         <ChartHeader title="일자별 수치 수정 이력" right={<span className="chart-period-note">선택 기간 · 최근 {dataQuality?.overrideHistory?.length ?? 0}건</span>} />
         <p className="table-helper">관리자가 직접 수정해 저장한 값만 표시합니다. 동일 일자를 여러 번 수정한 경우 최신 기록부터 모두 보존됩니다.</p>
         <div className="data-table">
-          <div className="table-head daily-history-head"><span>대상 일자</span><span>수정자</span><span>수정 시각</span><span>문의</span><span>예약</span><span>내원</span><span>매출</span><span>광고비</span><span>작업</span></div>
+          <div className="table-head daily-history-head"><span>대상 일자</span><span>수정자</span><span>수정 시각</span><span>수정 사유</span><span>문의</span><span>예약</span><span>내원</span><span>매출</span><span>광고비</span><span>작업</span></div>
           {(dataQuality?.overrideHistory ?? []).map((row, index) => (
             <div className="table-row daily-history-row" key={`${row.date}-${row.updatedAt ?? index}`}>
               <b>{row.date}</b>
               <span>{row.updatedBy || "확인 불가"}</span>
               <span>{row.updatedAt ? new Date(row.updatedAt).toLocaleString("ko-KR") : "-"}</span>
+              <span className="history-reason">{row.reason || "사유 미기록"}</span>
               <span>{row.inquiries.toLocaleString("ko-KR")}</span>
               <span>{row.reservations.toLocaleString("ko-KR")}</span>
               <span>{row.visits.toLocaleString("ko-KR")}</span>
