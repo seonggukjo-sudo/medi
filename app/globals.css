@@ -4979,6 +4979,45 @@ body {
   min-width: 920px;
 }
 
+.channel-funnel-panel {
+  margin-top: 10px;
+}
+
+.channel-funnel-head,
+.channel-funnel-row {
+  grid-template-columns: minmax(130px, 1.2fr) repeat(7, minmax(78px, 0.72fr)) minmax(145px, 1.2fr);
+  min-width: 980px;
+}
+
+.channel-funnel-row strong {
+  color: #216b57;
+}
+
+.channel-funnel-row .rate-pending {
+  color: #a55d34;
+}
+
+.funnel-bottleneck {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 25px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px !important;
+  white-space: nowrap;
+}
+
+.funnel-bottleneck.ready {
+  color: #9b5a0b;
+  background: #fff3d6;
+}
+
+.funnel-bottleneck.review {
+  color: #a74745;
+  background: #ffeded;
+}
+
 .decision-action {
   display: inline-flex;
   width: fit-content;

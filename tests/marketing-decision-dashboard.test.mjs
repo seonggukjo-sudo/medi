@@ -51,3 +51,13 @@ test("일자별 실데이터로 상관관계를 계산하고 인과관계 단정
   assert.match(page, /광고비 ↔ 매출/);
   assert.match(page, /인과관계로 해석하지 않습니다/);
 });
+
+test("매체별 클릭부터 내원까지 귀속 병목을 검증한다", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /매체별 전환 병목 진단/);
+  assert.match(page, /클릭→문의/);
+  assert.match(page, /문의→예약/);
+  assert.match(page, /예약→내원/);
+  assert.match(page, /part <= total/);
+  assert.match(page, /귀속 확인 필요/);
+});

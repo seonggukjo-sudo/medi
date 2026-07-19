@@ -2276,6 +2276,27 @@ export default function Home() {
     return { ...row, cpl, reservationCpa, visitCpa, roas, action };
   });
 
+  const channelFunnelRows = mergedAdSourceRows.map((row) => {
+    const validRate = (part: number, total: number) => total > 0 && part <= total
+      ? Math.round((part / total) * 1000) / 10
+      : null;
+    const stages = [
+      { label: "클릭→문의", rate: validRate(row.inquiries, row.clicks) },
+      { label: "문의→예약", rate: validRate(row.reservations, row.inquiries) },
+      { label: "예약→내원", rate: validRate(row.visits, row.reservations) },
+    ];
+    const validStages = stages.filter((stage): stage is { label: string; rate: number } => stage.rate !== null);
+    const bottleneck = [...validStages].sort((a, b) => a.rate - b.rate)[0] ?? null;
+    return {
+      ...row,
+      clickToInquiry: stages[0].rate,
+      inquiryToReservation: stages[1].rate,
+      reservationToVisit: stages[2].rate,
+      bottleneck,
+      complete: validStages.length === stages.length,
+    };
+  });
+
   const ga4CrmBridge = {
     webConversions: ga4Data?.summary.keyEvents ?? null,
     crmInquiries: actualKpiResult?.summary.inquiry ?? null,
@@ -3057,6 +3078,30 @@ export default function Home() {
             </article>
           ))}
           {!channelDecisionRows.length ? <div className="data-empty-row">광고 원천 데이터와 CRM 귀속값 연결 후 예산 판단을 표시합니다.</div> : null}
+        </div>
+      </section>
+
+      <section className="panel table-panel channel-funnel-panel">
+        <ChartHeader title="매체별 전환 병목 진단" right={<span className="chart-period-note">광고 원천 + CRM 귀속</span>} />
+        <p className="table-helper">플랫폼 클릭과 CRM 문의·예약·내원을 순서대로 연결합니다. 뒤 단계가 앞 단계보다 큰 경우에는 잘못된 비율을 만들지 않고 귀속 확인 대상으로 표시합니다.</p>
+        <div className="data-table">
+          <div className="table-head channel-funnel-head">
+            <span>매체</span><span>클릭</span><span>문의</span><span>클릭→문의</span><span>예약</span><span>문의→예약</span><span>내원</span><span>예약→내원</span><span>핵심 병목</span>
+          </div>
+          {channelFunnelRows.map((row) => (
+            <div className="table-row channel-funnel-row" key={`funnel-${row.name}`}>
+              <b>{row.name}</b>
+              <span>{row.clicks.toLocaleString("ko-KR")}</span>
+              <span>{row.inquiries.toLocaleString("ko-KR")}</span>
+              <strong className={row.clickToInquiry === null ? "rate-pending" : ""}>{row.clickToInquiry === null ? "확인 필요" : `${row.clickToInquiry}%`}</strong>
+              <span>{row.reservations.toLocaleString("ko-KR")}</span>
+              <strong className={row.inquiryToReservation === null ? "rate-pending" : ""}>{row.inquiryToReservation === null ? "확인 필요" : `${row.inquiryToReservation}%`}</strong>
+              <span>{row.visits.toLocaleString("ko-KR")}</span>
+              <strong className={row.reservationToVisit === null ? "rate-pending" : ""}>{row.reservationToVisit === null ? "확인 필요" : `${row.reservationToVisit}%`}</strong>
+              <b className={`funnel-bottleneck ${row.complete ? "ready" : "review"}`}>{row.complete && row.bottleneck ? `${row.bottleneck.label} ${row.bottleneck.rate}%` : "귀속 확인 필요"}</b>
+            </div>
+          ))}
+          {!channelFunnelRows.length ? <div className="data-empty-row">매체별 클릭과 CRM 귀속 데이터 연결 후 병목을 진단합니다.</div> : null}
         </div>
       </section>
 
