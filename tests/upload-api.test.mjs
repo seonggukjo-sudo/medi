@@ -94,6 +94,10 @@ test("일자별 수치 저장은 수정 사유를 검증하고 감사 이력에 
   assert.match(pageSource, /dailyEditReason/);
   assert.match(pageSource, /수정 사유/);
   assert.match(pageSource, /사유 미기록/);
+  assert.match(pageSource, /applyDailyOverrides/);
+  assert.match(pageSource, /setDataQualityRefreshKey/);
+  assert.match(pageSource, /reservationRate: rate\(totals\.reservations, totals\.inquiries\)/);
+  assert.match(pageSource, /세부 원천 합계와 차이가 생기면 대사 경고/);
 });
 
 test("저장하지 않은 일자별 수정값은 메뉴 이동과 창 종료 전에 보호한다", async () => {

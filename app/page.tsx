@@ -364,6 +364,29 @@ type DataQuality = {
   reconciliation: Array<{ metric: string; total: number; detailTotal: number; passed: boolean }>;
 };
 
+function applyDailyOverrides(result: ImportedKpiResult, quality: DataQuality | null) {
+  if (!quality?.overrides?.length) return result;
+  const totals = quality.totals;
+  const rate = (part: number, total: number) => total > 0 ? Math.round((part / total) * 1000) / 10 : null;
+  return {
+    ...result,
+    summary: {
+      ...result.summary,
+      inquiry: totals.inquiries,
+      reservation: totals.reservations,
+      visit: totals.visits,
+      sales: totals.sales,
+      adSpend: totals.adSpend,
+      reservationRate: rate(totals.reservations, totals.inquiries),
+      reservationVisitRate: rate(totals.visits, totals.reservations),
+      inquiryVisitRate: rate(totals.visits, totals.inquiries),
+      cpl: totals.inquiries > 0 ? Math.round(totals.adSpend / totals.inquiries) : null,
+      cpv: totals.visits > 0 ? Math.round(totals.adSpend / totals.visits) : null,
+      roas: totals.adSpend > 0 ? Math.round((totals.sales / totals.adSpend) * 1000) / 10 : null,
+    },
+  };
+}
+
 type SettingsHistoryRow = {
   userId: string;
   action: string;
@@ -890,6 +913,8 @@ export default function Home() {
   const [dataSourceState, setDataSourceState] = useState<"loading" | "live" | "empty" | "error">("loading");
   const [dataRefreshAt, setDataRefreshAt] = useState("");
   const [dataQuality, setDataQuality] = useState<DataQuality | null>(null);
+  const [comparisonDataQuality, setComparisonDataQuality] = useState<DataQuality | null>(null);
+  const [dataQualityRefreshKey, setDataQualityRefreshKey] = useState(0);
   const [accessRole, setAccessRole] = useState("조회 전용");
   const [canManageSettings, setCanManageSettings] = useState(false);
   const [canManageData, setCanManageData] = useState(false);
@@ -1046,6 +1071,7 @@ export default function Home() {
       .then(([body, comparisonBody]) => {
         startTransition(() => {
           setDataQuality(body);
+          setComparisonDataQuality(comparisonBody);
           const mergedDaily = new Map([...comparisonBody.daily, ...body.daily].map((row) => [row.date, row]));
           setDailyData(body.connected || comparisonBody.connected ? [...mergedDaily.values()].sort((a, b) => b.date.localeCompare(a.date)) : []);
           setUploadedFiles(body.uploads.map((row) => ({
@@ -1070,7 +1096,7 @@ export default function Home() {
         setValidationResults(error instanceof Error ? error.message : "데이터 품질 검사를 실행하지 못했습니다.");
       });
     return () => controller.abort();
-  }, [activeDateRange.start, activeDateRange.end, authState, comparisonDateRange.start, comparisonDateRange.end]);
+  }, [activeDateRange.start, activeDateRange.end, authState, comparisonDateRange.start, comparisonDateRange.end, dataQualityRefreshKey]);
 
   useEffect(() => {
     if (!ga4Automation || authState !== "authenticated") return;
@@ -1375,6 +1401,7 @@ export default function Home() {
       dailyEditBackupRef.current = null;
       setDailySaveState("saved");
       setValidationResults(`일자별 수정값 ${body.saved ?? rows.length}건을 서버에 저장하고 변경 이력에 기록했습니다.`);
+      setDataQualityRefreshKey((value) => value + 1);
       const nextMenu = pendingMenu;
       setPendingMenu(null);
       if (nextMenu) setActiveMenu(nextMenu);
@@ -1536,6 +1563,7 @@ export default function Home() {
       if (!dataResponse.ok) throw new Error(dataBody.error || "저장된 데이터를 다시 불러오지 못했습니다.");
       setImportedRows(dataBody.rows as ImportedDashboardRows);
       setDailyData(aggregateDailyData(dataBody.rows as ImportedDashboardRows));
+      setDataQualityRefreshKey((value) => value + 1);
       setDataSourceState(dataBody.connected ? "live" : "empty");
       setUploadedFiles((current) => current.map((row, index) => index === 0 ? { ...row, status: "정상 반영", updated: "방금 전" } : row));
       setValidationResults(`${file.name} 정상 검수 ${validation.validRows}건 · 원본은 R2, 집계 데이터는 D1에 영구 저장되었습니다.`);
@@ -1555,11 +1583,12 @@ export default function Home() {
       payments: filterRowsByDate(importedRows.payments, "paid_at", activeDateRange.start, activeDateRange.end),
       adSpend: filterRowsByDate(importedRows.adSpend, "spend_date", activeDateRange.start, activeDateRange.end),
     };
-    return calculateImportedKpis(filteredRows, {
+    const result = calculateImportedKpis(filteredRows, {
       noShowAppointments: filterRowsByDate(importedRows.appointments, "scheduled_at", activeDateRange.start, activeDateRange.end),
       allVisits: filteredRows.visits,
     });
-  }, [importedRows, hasImportedRows, activeDateRange.start, activeDateRange.end]);
+    return applyDailyOverrides(result, dataQuality);
+  }, [importedRows, hasImportedRows, activeDateRange.start, activeDateRange.end, dataQuality]);
 
   const previousKpiResult = useMemo<ImportedKpiResult | null>(() => {
     if (!hasImportedRows) return null;
@@ -1570,11 +1599,12 @@ export default function Home() {
       payments: filterRowsByDate(importedRows.payments, "paid_at", comparisonDateRange.start, comparisonDateRange.end),
       adSpend: filterRowsByDate(importedRows.adSpend, "spend_date", comparisonDateRange.start, comparisonDateRange.end),
     };
-    return calculateImportedKpis(filteredRows, {
+    const result = calculateImportedKpis(filteredRows, {
       noShowAppointments: filterRowsByDate(importedRows.appointments, "scheduled_at", comparisonDateRange.start, comparisonDateRange.end),
       allVisits: filteredRows.visits,
     });
-  }, [importedRows, hasImportedRows, comparisonDateRange.start, comparisonDateRange.end]);
+    return applyDailyOverrides(result, comparisonDataQuality);
+  }, [importedRows, hasImportedRows, comparisonDateRange.start, comparisonDateRange.end, comparisonDataQuality]);
 
   const displayedConsultCards = useMemo(() => {
     if (!actualKpiResult) return consultCards.map((card) => ({ ...card, value: "-", delta: "데이터 미연동", previous: "실데이터 연결 후 표시" }));
@@ -3945,7 +3975,7 @@ export default function Home() {
           <small>{activeDateRange.start} ~ {activeDateRange.end} · {visibleDailyData.length}일 표시</small>
         </div>
         <label className="daily-edit-reason"><span>수정 사유</span><input disabled={!canManageData} value={dailyEditReason} maxLength={200} onChange={(event) => setDailyEditReason(event.target.value)} placeholder={isDataDirty ? "저장 전에 수정 사유를 입력해 주세요." : "수치를 수정하면 사유 입력이 활성화됩니다."} /><small>{dailyEditReason.length}/200</small></label>
-        <p className="table-helper">업로드된 원천 데이터의 일자별 합계입니다. 관리자와 마케팅 권한은 수치를 직접 수정할 수 있으며, 저장값과 수정자는 서버 변경 이력에 남습니다.</p>
+        <p className="table-helper">업로드된 원천 데이터의 일자별 합계입니다. 저장한 문의·예약·내원·매출·광고비는 같은 기간의 KPI에 즉시 반영되며, 세부 원천 합계와 차이가 생기면 대사 경고로 표시됩니다.</p>
         <div className="data-table">
           <div className="table-head daily-data-head">
             <span>일자</span><span>상담</span><span>예약</span><span>내원</span><span>예약률</span><span>내원율</span><span>매출</span><span>광고비</span>
