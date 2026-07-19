@@ -18,6 +18,8 @@ const defaultSettings = {
   kpiTargets: [],
   aiSettings: { enabled: true, frequency: "매일 오전 9시", compare: "전주 동일기간", anomaly: "10% 이상", recommendation: "핵심 3개" },
   ga4Automation: true,
+  googleSheetId: "",
+  googleSheetAutomation: false,
 };
 
 function parseJson<T>(value: unknown, fallback: T): T {

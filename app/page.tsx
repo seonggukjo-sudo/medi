@@ -346,6 +346,17 @@ type SettingsSnapshot = {
   kpiTargets: KpiTargetRow[];
   aiSettings: { enabled: boolean; frequency: string; compare: string; anomaly: string; recommendation: string };
   ga4Automation: boolean;
+  googleSheetId: string;
+  googleSheetAutomation: boolean;
+};
+
+type GoogleSheetStatus = {
+  configured: boolean;
+  sheetConfigured: boolean;
+  serviceAccountConfigured: boolean;
+  serviceAccountEmail: string;
+  lastSyncedAt: string | null;
+  tabs: string[];
 };
 
 const initialUsers: UserAccessRow[] = [
@@ -854,6 +865,12 @@ export default function Home() {
     recommendation: "핵심 3개",
   });
   const [ga4Automation, setGa4Automation] = useState(true);
+  const [googleSheetId, setGoogleSheetId] = useState("");
+  const [googleSheetAutomation, setGoogleSheetAutomation] = useState(false);
+  const [googleSheetStatus, setGoogleSheetStatus] = useState<GoogleSheetStatus | null>(null);
+  const [googleSheetSyncState, setGoogleSheetSyncState] = useState<"idle" | "loading" | "live" | "error">("idle");
+  const [googleSheetMessage, setGoogleSheetMessage] = useState("구글 시트 연결 상태를 확인해 주세요.");
+  const [googleSheetRefreshKey, setGoogleSheetRefreshKey] = useState(0);
   const [ga4Data, setGa4Data] = useState<Ga4ApiData | null>(null);
   const [ga4LoadState, setGa4LoadState] = useState<"loading" | "live" | "error">("loading");
   const [ga4LoadMessage, setGa4LoadMessage] = useState("GA4 실데이터를 불러오는 중입니다.");
@@ -1000,6 +1017,8 @@ export default function Home() {
         const savedTargets = Array.isArray(saved.kpiTargets) && saved.kpiTargets.length > 0 ? saved.kpiTargets : initialKpiTargets;
         const savedAiSettings = saved.aiSettings || { enabled: true, frequency: "매일 오전 9시", compare: "전주 동일기간", anomaly: "10% 이상", recommendation: "핵심 3개" };
         const savedGa4Automation = typeof saved.ga4Automation === "boolean" ? saved.ga4Automation : true;
+        const savedGoogleSheetId = String(saved.googleSheetId || "");
+        const savedGoogleSheetAutomation = typeof saved.googleSheetAutomation === "boolean" ? saved.googleSheetAutomation : false;
         const savedUsers = Array.isArray(settingsBody.users) ? settingsBody.users : initialUsers;
         setHospitalName(savedHospitalName);
         setHospitalLocation(savedHospitalLocation);
@@ -1011,6 +1030,8 @@ export default function Home() {
         setKpiTargets(savedTargets);
         setAiSettings(savedAiSettings);
         setGa4Automation(savedGa4Automation);
+        setGoogleSheetId(savedGoogleSheetId);
+        setGoogleSheetAutomation(savedGoogleSheetAutomation);
         setUsers(savedUsers);
         settingsBackupRef.current = {
           hospitalName: savedHospitalName,
@@ -1023,6 +1044,8 @@ export default function Home() {
           kpiTargets: savedTargets.map((target: KpiTargetRow) => ({ ...target })),
           aiSettings: { ...savedAiSettings },
           ga4Automation: savedGa4Automation,
+          googleSheetId: savedGoogleSheetId,
+          googleSheetAutomation: savedGoogleSheetAutomation,
         };
         setSettingsHistory(settingsBody.history || []);
         setLoginEmail(settingsBody.access.email);
@@ -1112,6 +1135,28 @@ export default function Home() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [authState, ga4Automation]);
+
+  useEffect(() => {
+    if (authState !== "authenticated") return;
+    const controller = new AbortController();
+    fetch("/api/google-sheets", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "구글 시트 연결 상태를 확인하지 못했습니다.");
+        return body as GoogleSheetStatus;
+      })
+      .then((body) => {
+        setGoogleSheetStatus(body);
+        setGoogleSheetSyncState(body.configured ? "live" : "idle");
+        setGoogleSheetMessage(body.configured ? "구글 시트 읽기 연결이 준비되었습니다." : body.sheetConfigured ? "서비스 계정 환경변수를 확인해 주세요." : "템플릿을 구글 시트로 변환한 뒤 주소를 저장해 주세요.");
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setGoogleSheetSyncState("error");
+        setGoogleSheetMessage(error instanceof Error ? error.message : "구글 시트 연결 상태를 확인하지 못했습니다.");
+      });
+    return () => controller.abort();
+  }, [authState, googleSheetRefreshKey]);
 
   useEffect(() => {
     if (authState !== "authenticated") return;
@@ -1445,6 +1490,8 @@ export default function Home() {
     kpiTargets: kpiTargets.map((target) => ({ ...target })),
     aiSettings: { ...aiSettings },
     ga4Automation,
+    googleSheetId,
+    googleSheetAutomation,
   });
 
   const discardSettingsChanges = () => {
@@ -1460,6 +1507,8 @@ export default function Home() {
     setKpiTargets(saved.kpiTargets.map((target) => ({ ...target })));
     setAiSettings({ ...saved.aiSettings });
     setGa4Automation(saved.ga4Automation);
+    setGoogleSheetId(saved.googleSheetId);
+    setGoogleSheetAutomation(saved.googleSheetAutomation);
     setIsSettingsDirty(false);
     setSettingsSaveState("idle");
     setValidationResults("마지막으로 저장된 설정으로 되돌렸습니다.");
@@ -1477,7 +1526,7 @@ export default function Home() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          settings: { hospitalName, hospitalLocation, locale: settingsLocale, defaultPeriod: settingsPeriod, compare: settingsCompare, notifications, kpiTargets, aiSettings, ga4Automation },
+          settings: { hospitalName, hospitalLocation, locale: settingsLocale, defaultPeriod: settingsPeriod, compare: settingsCompare, notifications, kpiTargets, aiSettings, ga4Automation, googleSheetId, googleSheetAutomation },
           users,
         }),
       });
@@ -1498,6 +1547,39 @@ export default function Home() {
       setValidationResults(error instanceof Error ? error.message : "설정을 저장하지 못했습니다.");
     }
   };
+
+  const syncGoogleSheet = async () => {
+    if (!canManageData || isSettingsDirty) {
+      setGoogleSheetMessage(isSettingsDirty ? "구글 시트 주소를 먼저 설정 저장해 주세요." : "현재 권한으로는 데이터를 동기화할 수 없습니다.");
+      return;
+    }
+    setGoogleSheetSyncState("loading");
+    setGoogleSheetMessage("구글 시트 5개 탭을 검증하고 있습니다.");
+    try {
+      const response = await fetch("/api/google-sheets", { method: "POST" });
+      const body = await response.json() as { error?: string; savedRows?: number; syncedAt?: string };
+      if (!response.ok) throw new Error(body.error || "구글 시트 동기화에 실패했습니다.");
+      const dataResponse = await fetch("/api/dashboard-data", { cache: "no-store" });
+      const dataBody = await dataResponse.json();
+      if (!dataResponse.ok) throw new Error(dataBody.error || "동기화된 데이터를 다시 불러오지 못했습니다.");
+      setImportedRows(dataBody.rows as ImportedDashboardRows);
+      setDailyData(aggregateDailyData(dataBody.rows as ImportedDashboardRows));
+      setDataSourceState(dataBody.connected ? "live" : "empty");
+      setDataQualityRefreshKey((value) => value + 1);
+      setGoogleSheetRefreshKey((value) => value + 1);
+      setGoogleSheetSyncState("live");
+      setGoogleSheetMessage(`구글 시트 ${body.savedRows ?? 0}행을 검증해 대시보드에 반영했습니다.`);
+    } catch (error) {
+      setGoogleSheetSyncState("error");
+      setGoogleSheetMessage(error instanceof Error ? error.message : "구글 시트 동기화에 실패했습니다.");
+    }
+  };
+
+  useEffect(() => {
+    if (!googleSheetAutomation || !googleSheetStatus?.configured || authState !== "authenticated") return;
+    const interval = window.setInterval(() => { void syncGoogleSheet(); }, 15 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [authState, googleSheetAutomation, googleSheetStatus?.configured]);
 
   const downloadTemplate = () => {
     const contract = importTables.find((table) => table.key === templateType);
@@ -4065,6 +4147,18 @@ export default function Home() {
 
   const integrationHealthRows = [
     {
+      key: "google-sheets",
+      name: "Google Sheets",
+      description: "CRM·예약·내원·결제·광고 운영 데이터",
+      state: googleSheetSyncState === "loading" ? "loading" : googleSheetSyncState === "error" ? "error" : googleSheetStatus?.configured ? "live" : "disconnected",
+      status: googleSheetSyncState === "loading" ? "동기화 중" : googleSheetSyncState === "error" ? "오류" : googleSheetStatus?.configured ? "연결 준비" : "미설정",
+      lastSuccess: googleSheetStatus?.lastSyncedAt ? googleSheetStatus.lastSyncedAt.replace("T", " ").slice(0, 16) : "성공 기록 없음",
+      cadence: googleSheetAutomation ? "화면 실행 중 15분 주기" : "수동 동기화",
+      message: googleSheetMessage,
+      refresh: syncGoogleSheet,
+      refreshing: googleSheetSyncState === "loading",
+    },
+    {
       key: "ga4",
       name: "GA4 Data API",
       description: "웹 유입·랜딩페이지·전환 이벤트",
@@ -4274,6 +4368,24 @@ export default function Home() {
           <label className="setting-row"><span>이상 변화 감지</span><select className="setting-input" value={aiSettings.anomaly} onChange={(event) => { setAiSettings((current) => ({ ...current, anomaly: event.target.value })); setIsSettingsDirty(true); }}><option>5% 이상</option><option>10% 이상</option><option>15% 이상</option><option>20% 이상</option></select></label>
           <label className="setting-row"><span>추천 표시 수준</span><select className="setting-input" value={aiSettings.recommendation} onChange={(event) => { setAiSettings((current) => ({ ...current, recommendation: event.target.value })); setIsSettingsDirty(true); }}><option>핵심 3개</option><option>상세 5개</option><option>전체 추천</option></select></label>
           <div className="setting-row"><span>GA4 자동 분석</span><button type="button" className={`toggle ${ga4Automation ? "on" : ""}`} aria-pressed={ga4Automation} onClick={() => { setGa4Automation((enabled) => !enabled); setIsSettingsDirty(true); }} /></div>
+          <div className="setting-row"><span>구글 시트 자동 동기화</span><button type="button" className={`toggle ${googleSheetAutomation ? "on" : ""}`} aria-pressed={googleSheetAutomation} onClick={() => { setGoogleSheetAutomation((enabled) => !enabled); setIsSettingsDirty(true); }} /></div>
+        </div>
+      </section>
+      <section className="panel google-sheet-connect-panel">
+        <div className="google-sheet-connect-copy">
+          <span className="ai-pill">GOOGLE SHEETS</span>
+          <h2>CRM·광고 운영 시트 연동</h2>
+          <p>상담문의, 예약, 내원, 결제매출, 광고비 탭을 서버에서 읽어 기존 업로드와 같은 검증을 거친 뒤 D1에 반영합니다.</p>
+          <div className="google-sheet-actions">
+            <a className="primary-button" href="/medi-insight-google-sheets-template.xlsx" download>구글 시트 템플릿 다운로드</a>
+            <button className="pill" type="button" disabled={!googleSheetStatus?.configured || googleSheetSyncState === "loading" || isSettingsDirty || !canManageData} onClick={syncGoogleSheet}>{googleSheetSyncState === "loading" ? "동기화 중" : "지금 동기화"}</button>
+          </div>
+        </div>
+        <div className="google-sheet-connect-form">
+          <label><span>구글 시트 주소 또는 ID</span><input disabled={!canManageSettings} value={googleSheetId} onChange={(event) => { setGoogleSheetId(event.target.value); setIsSettingsDirty(true); }} placeholder="https://docs.google.com/spreadsheets/d/..." /></label>
+          <label><span>서비스 계정 공유 주소</span><input readOnly value={googleSheetStatus?.serviceAccountEmail || "환경변수 설정 후 표시"} /></label>
+          <div className={`google-sheet-status ${googleSheetSyncState}`}><strong>{googleSheetStatus?.configured ? "연결 준비 완료" : "연결 설정 필요"}</strong><span>{googleSheetMessage}</span></div>
+          <small>템플릿을 Google Drive에 업로드해 Google 스프레드시트로 변환한 뒤, 위 서비스 계정을 뷰어로 공유하고 시트 주소를 저장하세요. 자동 동기화 사용 시 화면이 열려 있는 동안 15분마다 갱신됩니다.</small>
         </div>
       </section>
       <section className="panel integration-health-panel">
