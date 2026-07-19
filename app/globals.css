@@ -4642,6 +4642,11 @@ body {
   color: #bd4b3c;
 }
 
+.auth-gate-status.unavailable {
+  background: #fff4d9;
+  color: #94610c;
+}
+
 .auth-gate-card h1 {
   margin: 18px 0 12px;
   color: #122b49;
