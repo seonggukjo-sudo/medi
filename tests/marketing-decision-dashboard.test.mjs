@@ -89,3 +89,17 @@ test("설정에서 외부 연동 상태와 실제 성공 기록을 통합 관리
   assert.match(css, /\.integration-health-grid/);
   assert.match(css, /\.integration-state\.partial/);
 });
+
+test("로그인과 역할 확인 전에는 대시보드 데이터 요청과 화면을 차단한다", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const access = await readFile(new URL("../lib/server-access.ts", import.meta.url), "utf8");
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(page, /authState !== "authenticated"/);
+  assert.match(page, /로그인 전 데이터 요청 차단/);
+  assert.match(page, /사용자 역할별 API 권한 검사/);
+  assert.match(page, /등록되지 않은 계정/);
+  assert.match(page, /\/signin-with-chatgpt\?return_to=\//);
+  assert.match(access, /if \(!email\) throw new AccessError/);
+  assert.match(access, /if \(!bootstrap && !user\) throw new AccessError/);
+  assert.match(css, /\.auth-gate-shell/);
+});

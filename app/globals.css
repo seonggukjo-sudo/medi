@@ -4576,6 +4576,138 @@ body {
   margin-top: auto;
 }
 
+.auth-gate-shell {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 75% 15%, rgba(70, 145, 233, 0.18), transparent 32%),
+    radial-gradient(circle at 18% 82%, rgba(31, 175, 135, 0.13), transparent 28%),
+    #0f2136;
+}
+
+.auth-gate-card {
+  width: min(620px, 100%);
+  padding: clamp(28px, 5vw, 52px);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 28px 80px rgba(4, 18, 35, 0.3);
+}
+
+.auth-gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #122b49;
+  font-size: 18px;
+}
+
+.auth-gate-brand span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 13px;
+  background: #122b49;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.auth-gate-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 38px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #3567d5;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.auth-gate-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.auth-gate-status.locked,
+.auth-gate-status.forbidden {
+  background: #fff0ed;
+  color: #bd4b3c;
+}
+
+.auth-gate-card h1 {
+  margin: 18px 0 12px;
+  color: #122b49;
+  font-size: clamp(27px, 5vw, 40px);
+  line-height: 1.18;
+  letter-spacing: -0.04em;
+}
+
+.auth-gate-card > p {
+  margin: 0;
+  color: #65748a;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.auth-gate-action {
+  display: inline-flex;
+  margin-top: 26px;
+  text-decoration: none;
+}
+
+.auth-gate-card > small {
+  display: block;
+  margin-top: 12px;
+  color: #9b574f;
+  font-size: 11px;
+}
+
+.auth-gate-loader {
+  display: flex;
+  gap: 7px;
+  margin-top: 26px;
+}
+
+.auth-gate-loader span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4c7df7;
+  animation: auth-gate-pulse 1.1s ease-in-out infinite;
+}
+
+.auth-gate-loader span:nth-child(2) { animation-delay: 0.14s; }
+.auth-gate-loader span:nth-child(3) { animation-delay: 0.28s; }
+
+.auth-gate-policy {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 34px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(33, 55, 94, 0.1);
+}
+
+.auth-gate-policy span {
+  color: #7c899b;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+@keyframes auth-gate-pulse {
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-3px); }
+}
+
 @media (max-width: 1220px) {
   .ga4-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4605,6 +4737,19 @@ body {
 
   .settings-ai-grid .setting-input {
     width: 58%;
+  }
+
+  .auth-gate-shell {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .auth-gate-card {
+    border-radius: 20px;
+  }
+
+  .auth-gate-policy {
+    grid-template-columns: 1fr;
   }
 }
 /* Persisted data, access, and reconciliation states */

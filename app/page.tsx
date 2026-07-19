@@ -846,6 +846,8 @@ export default function Home() {
   const [selectedKpiLabel, setSelectedKpiLabel] = useState<string | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authState, setAuthState] = useState<"checking" | "authenticated" | "unauthenticated" | "forbidden">("checking");
+  const [authMessage, setAuthMessage] = useState("로그인과 병원 접근 권한을 확인하고 있습니다.");
   const [loginEmail, setLoginEmail] = useState("admin@hospital.local");
   const [templateType, setTemplateType] = useState<ImportTableKey>("leads");
   const [dailyData, setDailyData] = useState<DailyDataRow[]>([]);
@@ -911,12 +913,20 @@ export default function Home() {
     Promise.all([
       fetch("/api/settings", { cache: "no-store", signal: controller.signal }).then(async (response) => {
         const body = await response.json();
-        if (!response.ok) throw new Error(body.error || "설정을 불러오지 못했습니다.");
+        if (!response.ok) {
+          const error = new Error(body.error || "설정을 불러오지 못했습니다.") as Error & { status?: number };
+          error.status = response.status;
+          throw error;
+        }
         return body;
       }),
       fetch("/api/dashboard-data", { cache: "no-store", signal: controller.signal }).then(async (response) => {
         const body = await response.json();
-        if (!response.ok) throw new Error(body.error || "운영 데이터를 불러오지 못했습니다.");
+        if (!response.ok) {
+          const error = new Error(body.error || "운영 데이터를 불러오지 못했습니다.") as Error & { status?: number };
+          error.status = response.status;
+          throw error;
+        }
         return body;
       }),
     ]).then(([settingsBody, dataBody]) => {
@@ -940,6 +950,8 @@ export default function Home() {
         setCanManageSettings(Boolean(settingsBody.access.canManageSettings));
         setCanManageData(Boolean(settingsBody.access.canManageData));
         setIsAuthenticated(true);
+        setAuthState("authenticated");
+        setAuthMessage("");
         setImportedRows(dataBody.rows as ImportedDashboardRows);
         const aggregated = aggregateDailyData(dataBody.rows as ImportedDashboardRows);
         setDailyData(dataBody.connected ? aggregated : []);
@@ -948,6 +960,10 @@ export default function Home() {
       });
     }).catch((error) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
+      const status = (error as Error & { status?: number }).status;
+      setIsAuthenticated(false);
+      setAuthState(status === 403 ? "forbidden" : "unauthenticated");
+      setAuthMessage(error instanceof Error ? error.message : "로그인 상태를 확인하지 못했습니다.");
       setDataSourceState("error");
       setValidationResults(error instanceof Error ? error.message : "데이터 연결을 확인해 주세요.");
     });
@@ -955,6 +971,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (authState !== "authenticated") return;
     const controller = new AbortController();
     const loadQuality = (start: string, end: string) => fetch(`/api/data-quality?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -993,10 +1010,10 @@ export default function Home() {
         setValidationResults(error instanceof Error ? error.message : "데이터 품질 검사를 실행하지 못했습니다.");
       });
     return () => controller.abort();
-  }, [activeDateRange.start, activeDateRange.end, comparisonDateRange.start, comparisonDateRange.end]);
+  }, [activeDateRange.start, activeDateRange.end, authState, comparisonDateRange.start, comparisonDateRange.end]);
 
   useEffect(() => {
-    if (!ga4Automation) return;
+    if (!ga4Automation || authState !== "authenticated") return;
     const refresh = () => setGa4RefreshKey((value) => value + 1);
     const interval = window.setInterval(refresh, 5 * 60 * 1000);
     const handleVisibilityChange = () => {
@@ -1007,9 +1024,10 @@ export default function Home() {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [ga4Automation]);
+  }, [authState, ga4Automation]);
 
   useEffect(() => {
+    if (authState !== "authenticated") return;
     const refresh = () => setNaverSearchAdRefreshKey((value) => value + 1);
     const interval = window.setInterval(refresh, 5 * 60 * 1000);
     const handleVisibilityChange = () => {
@@ -1020,9 +1038,10 @@ export default function Home() {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [authState]);
 
   useEffect(() => {
+    if (authState !== "authenticated") return;
     const controller = new AbortController();
     queueMicrotask(() => {
       if (controller.signal.aborted) return;
@@ -1060,9 +1079,10 @@ export default function Home() {
       });
 
     return () => controller.abort();
-  }, [activeDateRange.start, activeDateRange.end, ga4RefreshKey]);
+  }, [activeDateRange.start, activeDateRange.end, authState, ga4RefreshKey]);
 
   useEffect(() => {
+    if (authState !== "authenticated") return;
     const controller = new AbortController();
     queueMicrotask(() => {
       if (controller.signal.aborted) return;
@@ -1099,9 +1119,10 @@ export default function Home() {
       });
 
     return () => controller.abort();
-  }, [activeDateRange.start, activeDateRange.end, naverSearchAdRefreshKey]);
+  }, [activeDateRange.start, activeDateRange.end, authState, naverSearchAdRefreshKey]);
 
   useEffect(() => {
+    if (authState !== "authenticated") return;
     let timer = 0;
     const scheduleNextPlaceRankRefresh = () => {
       const now = new Date();
@@ -1116,9 +1137,10 @@ export default function Home() {
     };
     scheduleNextPlaceRankRefresh();
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [authState]);
 
   useEffect(() => {
+    if (authState !== "authenticated") return;
     const controller = new AbortController();
     queueMicrotask(() => {
       if (!controller.signal.aborted) startTransition(() => setPlaceRankLoadState("loading"));
@@ -1150,9 +1172,10 @@ export default function Home() {
         setPlaceRankMessage(error instanceof Error ? error.message : "플레이스 순위 연결을 확인해 주세요.");
       });
     return () => controller.abort();
-  }, [activeDateRange.start, activeDateRange.end, placeRankRefreshKey]);
+  }, [activeDateRange.start, activeDateRange.end, authState, placeRankRefreshKey]);
 
   useEffect(() => {
+    if (authState !== "authenticated") return;
     const selected = placeRankData?.keywords.find((row) => row.id === selectedPlaceRankId) ?? placeRankData?.keywords[0];
     if (!selected || !placeRankData?.providerConfigured) {
       setRankfreeInsights(null);
@@ -1180,7 +1203,7 @@ export default function Home() {
         setRankfreeInsightsState("error");
       });
     return () => controller.abort();
-  }, [placeRankData, selectedPlaceRankId]);
+  }, [authState, placeRankData, selectedPlaceRankId]);
 
   const savePlaceRankKeyword = async () => {
     if (!placeRankKeyword.trim() || !placeRankUrl.trim()) {
@@ -4221,6 +4244,31 @@ export default function Home() {
 
   if (!isClientReady) {
     return <div className="dashboard-shell" aria-busy="true" />;
+  }
+
+  if (authState !== "authenticated") {
+    const isCheckingAccess = authState === "checking";
+    const isForbidden = authState === "forbidden";
+    return (
+      <main className="auth-gate-shell">
+        <section className="auth-gate-card" aria-live="polite" aria-busy={isCheckingAccess}>
+          <div className="auth-gate-brand"><span>M</span><strong>메디인사이트</strong></div>
+          <div className={`auth-gate-status ${isCheckingAccess ? "checking" : isForbidden ? "forbidden" : "locked"}`}>
+            <i aria-hidden="true" />
+            {isCheckingAccess ? "접근 권한 확인 중" : isForbidden ? "등록되지 않은 계정" : "로그인 필요"}
+          </div>
+          <h1>{isCheckingAccess ? "안전하게 데이터를 준비하고 있습니다." : isForbidden ? "이 대시보드에 접근할 권한이 없습니다." : "로그인 후 대시보드를 확인할 수 있습니다."}</h1>
+          <p>{isCheckingAccess ? "로그인 계정과 병원 권한을 확인한 뒤 필요한 데이터만 불러옵니다." : isForbidden ? "병원 최고관리자에게 현재 ChatGPT 계정을 사용자·권한 목록에 등록해 달라고 요청해 주세요." : "병원 CRM과 광고 데이터는 비공개 정보이므로 ChatGPT 로그인과 병원 접근 권한 확인 후에만 표시됩니다."}</p>
+          {!isCheckingAccess ? <a className="primary-button auth-gate-action" href="/signin-with-chatgpt?return_to=/">{isForbidden ? "다른 계정으로 로그인" : "ChatGPT로 로그인"}</a> : <div className="auth-gate-loader"><span /><span /><span /></div>}
+          {!isCheckingAccess && authMessage ? <small>{authMessage}</small> : null}
+          <div className="auth-gate-policy">
+            <span>로그인 전 데이터 요청 차단</span>
+            <span>사용자 역할별 API 권한 검사</span>
+            <span>비공개 원천 데이터 보호</span>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   let content: ReactNode;
