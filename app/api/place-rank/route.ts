@@ -7,6 +7,7 @@ export const runtime = "edge";
 const hospitalId = "demo-hospital";
 type RuntimeEnv = {
   DB: D1Database;
+  RANKFREE_API_KEY?: string;
   PLACE_RANK_PROVIDER_URL?: string;
   PLACE_RANK_PROVIDER_TOKEN?: string;
   PLACE_RANK_PROVIDER_ACTOR_ID?: string;
@@ -30,6 +31,17 @@ type ApifyRankResult = {
   outsideTop100?: boolean;
   checkedAt?: string;
   message?: string;
+};
+
+type RankfreeRankPayload = {
+  data?: RankfreeRankPayload;
+  rank?: number | null;
+  list_total?: number | null;
+  checked?: string;
+  checked_at?: string;
+  message?: string;
+  error?: string;
+  blocked?: boolean;
 };
 
 type ProviderPlaceItem = {
@@ -202,6 +214,74 @@ function dateInSeoul(value: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
+function providerConfigured(runtimeEnv: RuntimeEnv) {
+  return Boolean(runtimeEnv.RANKFREE_API_KEY || runtimeEnv.PLACE_RANK_PROVIDER_URL);
+}
+
+async function registerRankfreeSlot(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword) {
+  if (!runtimeEnv.RANKFREE_API_KEY) return { registered: false, provider: "rankfree" };
+  const response = await fetch("https://rankfree.kr/api/v1/rank/slots", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${runtimeEnv.RANKFREE_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ place: keyword.placeUrl, keywords: [keyword.keyword], label: keyword.keyword }),
+  });
+  const payload = await response.json().catch(() => ({})) as { created?: unknown[]; skipped?: unknown[]; message?: string; error?: string };
+  if (!response.ok && response.status !== 409) {
+    throw new Error(payload.message || payload.error || `랭크프리 추적 등록 실패 (HTTP ${response.status})`);
+  }
+  return {
+    registered: true,
+    provider: "rankfree",
+    created: Array.isArray(payload.created) ? payload.created.length : 0,
+    skipped: Array.isArray(payload.skipped) ? payload.skipped.length : 0,
+  };
+}
+
+async function measureWithRankfree(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword, trigger: "scheduled" | "manual"): Promise<PlaceRankSnapshot> {
+  const response = await fetch("https://rankfree.kr/api/v1/rank/check", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${runtimeEnv.RANKFREE_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ keyword: keyword.keyword, place: keyword.placeUrl }),
+  });
+  const payload = await response.json().catch(() => ({})) as RankfreeRankPayload;
+  const result = payload.data && typeof payload.data === "object" ? payload.data : payload;
+  if (response.status === 429 || result.blocked || Number(result.rank) === -429) {
+    throw new Error(result.message || result.error || "랭크프리 조회가 일시적으로 제한되었습니다.");
+  }
+  if (!response.ok) {
+    throw new Error(result.message || result.error || `랭크프리 순위 조회 실패 (HTTP ${response.status})`);
+  }
+
+  const measuredRank = Number(result.rank);
+  const outsideTop100 = measuredRank === 0 || measuredRank === 300 || measuredRank > 100;
+  const rank = Number.isInteger(measuredRank) && measuredRank >= 1 && measuredRank <= 100 ? measuredRank : null;
+  if (rank === null && !outsideTop100) {
+    throw new Error(result.message || result.error || "랭크프리가 유효한 순위 값을 반환하지 않았습니다.");
+  }
+  const checkedValue = result.checked_at || result.checked;
+  const checkedAt = checkedValue && !Number.isNaN(new Date(checkedValue).getTime()) ? new Date(checkedValue).toISOString() : new Date().toISOString();
+  return {
+    keywordId: keyword.id,
+    date: dateInSeoul(checkedAt) || seoulDate(),
+    rank,
+    outsideTop100,
+    status: "measured",
+    source: "authorized-provider",
+    checkedAt,
+    rankMethod: "provider-absolute",
+    trigger,
+    checkedCount: outsideTop100 ? Math.max(100, Number(result.list_total) || 300) : Number(result.list_total) || undefined,
+    maxRank: 300,
+    message: outsideTop100 ? "100위 밖" : "랭크프리 순위 조회",
+  };
+}
+
 async function readRankResultFromRunLog(runtimeEnv: RuntimeEnv, runId: string) {
   if (!runtimeEnv.PLACE_RANK_PROVIDER_TOKEN) return null;
   const response = await fetch(`https://api.apify.com/v2/actor-runs/${encodeURIComponent(runId)}/log`, {
@@ -313,6 +393,9 @@ async function syncScheduledRuns(
 async function measureKeyword(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword, trigger: "scheduled" | "manual"): Promise<PlaceRankSnapshot> {
   const checkedAt = new Date().toISOString();
   const date = seoulDate();
+  if (runtimeEnv.RANKFREE_API_KEY) {
+    return measureWithRankfree(runtimeEnv, keyword, trigger);
+  }
   if (!runtimeEnv.PLACE_RANK_PROVIDER_URL) {
     throw new Error("허가된 순위 측정 공급자가 아직 연결되지 않았습니다.");
   }
@@ -366,7 +449,7 @@ async function measureKeyword(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword,
 }
 
 async function collectMissingToday(runtimeEnv: RuntimeEnv, access: { userId: string }, keywords: PlaceRankKeyword[], snapshots: PlaceRankSnapshot[]) {
-  if (!runtimeEnv.PLACE_RANK_PROVIDER_URL) return;
+  if (!providerConfigured(runtimeEnv)) return;
   if (seoulHour() < 9) return;
   const today = seoulDate();
   const measuredToday = new Set(snapshots
@@ -374,6 +457,9 @@ async function collectMissingToday(runtimeEnv: RuntimeEnv, access: { userId: str
     .map((row) => row.keywordId));
   for (const keyword of keywords.filter((row) => row.active && !measuredToday.has(row.id))) {
     try {
+      if (runtimeEnv.RANKFREE_API_KEY) {
+        await registerRankfreeSlot(runtimeEnv, keyword).catch(() => null);
+      }
       const snapshot = await measureKeyword(runtimeEnv, keyword, "scheduled");
       await writeAudit(runtimeEnv, access, "place_rank_snapshot", keyword.id, snapshot);
     } catch (error) {
@@ -404,7 +490,9 @@ export async function GET(request: Request) {
       return Response.json({ error: "올바른 조회 기간이 필요합니다." }, { status: 400 });
     }
     const allData = await loadPlaceRankData(runtimeEnv.DB, hospitalId, "2000-01-01", "2999-12-31");
-    const scheduledImported = await syncScheduledRuns(runtimeEnv, access, allData.keywords, allData.snapshots).catch(() => 0);
+    const scheduledImported = runtimeEnv.RANKFREE_API_KEY
+      ? 0
+      : await syncScheduledRuns(runtimeEnv, access, allData.keywords, allData.snapshots).catch(() => 0);
     let data = await loadPlaceRankData(runtimeEnv.DB, hospitalId, start!, end!);
     if (url.searchParams.get("collect") === "today") {
       await collectMissingToday(runtimeEnv, access, data.keywords, data.snapshots);
@@ -413,7 +501,8 @@ export async function GET(request: Request) {
     return Response.json({
       ...data,
       range: { start, end },
-      providerConfigured: Boolean(runtimeEnv.PLACE_RANK_PROVIDER_URL),
+      providerConfigured: providerConfigured(runtimeEnv),
+      provider: runtimeEnv.RANKFREE_API_KEY ? "rankfree" : runtimeEnv.PLACE_RANK_PROVIDER_URL ? "apify" : null,
       collectionRule: "daily-09:00",
       scheduledTime: "09:00",
       collectionAvailable: seoulHour() >= 9,
@@ -449,7 +538,10 @@ export async function POST(request: Request) {
       const id = body.id || crypto.randomUUID();
       const value: PlaceRankKeyword = { id, keyword, placeUrl, placeId, active: true, createdAt: new Date().toISOString() };
       await writeAudit(runtimeEnv, access, "place_rank_keyword_saved", id, value);
-      return Response.json({ saved: true, keyword: value });
+      const tracking = runtimeEnv.RANKFREE_API_KEY
+        ? await registerRankfreeSlot(runtimeEnv, value)
+        : { registered: false, provider: null };
+      return Response.json({ saved: true, keyword: value, tracking });
     }
 
     if (body.action === "delete" && body.id) {
@@ -484,7 +576,7 @@ export async function POST(request: Request) {
     }
 
     if (body.action === "collect") {
-      if (!runtimeEnv.PLACE_RANK_PROVIDER_URL) return Response.json({ error: "허가된 자동 순위 측정 공급자를 먼저 연결해 주세요." }, { status: 503 });
+      if (!providerConfigured(runtimeEnv)) return Response.json({ error: "허가된 자동 순위 측정 공급자를 먼저 연결해 주세요." }, { status: 503 });
       const resetAt = new Date().toISOString();
       await writeAudit(runtimeEnv, access, "place_rank_snapshot_reset", keyword.id, { resetAt });
       const snapshot = await measureKeyword(runtimeEnv, keyword, "manual");
