@@ -179,3 +179,16 @@ test("저장하지 않은 설정을 이탈 전에 경고하고 마지막 저장�
   assert.match(page, /변경 취소/);
   assert.match(page, /저장 후 이동/);
 });
+
+test("수동 수정 합계와 세부 원천의 차이를 모든 페이지에서 명확히 안내한다", async () => {
+  const [page, css] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /reconciliationMismatchCount/);
+  assert.match(page, /수정 합계 적용/);
+  assert.match(page, /세부 원천에는 임의 배분하지 않았습니다/);
+  assert.match(page, /수치 대사표 확인/);
+  assert.match(page, /requestMenuChange\("data"\)/);
+  assert.match(css, /\.override-applied-label/);
+});

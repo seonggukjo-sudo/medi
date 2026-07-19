@@ -2190,6 +2190,8 @@ export default function Home() {
     : [];
   const reconciliationRows = [...(dataQuality?.reconciliation ?? []), ...dimensionReconciliation];
   const reconciliationWarning = reconciliationRows.some((row) => !row.passed);
+  const reconciliationMismatchCount = reconciliationRows.filter((row) => !row.passed).length;
+  const appliedOverrideDays = dataQuality?.overrides?.length ?? 0;
   const reconciliationState = (metrics: string[]) => {
     const rows = dimensionReconciliation.filter((row) => metrics.includes(row.metric));
     return rows.length > 0 && rows.every((row) => row.passed);
@@ -4540,6 +4542,7 @@ export default function Home() {
           </div>
 
           <div className="topbar-center" aria-live="polite">
+            {appliedOverrideDays > 0 ? <span className="override-applied-label">수정 합계 적용 · {appliedOverrideDays}일</span> : null}
             {externalSyncStatus ? (
               <span className={`external-sync-label ${externalSyncStatus.state}`} title={externalSyncStatus.state === "error" ? "외부 연동 설정과 최근 오류 메시지를 확인해 주세요." : undefined}>
                 {externalSyncStatus.label}{externalSyncStatus.syncedAt ? ` · ${externalSyncStatus.syncedAt}` : ""}
@@ -4616,7 +4619,15 @@ export default function Home() {
         )}
 
         <div className="page">
-          {reconciliationWarning ? <div className="reconciliation-alert" role="alert">기간 합계와 세부 항목 합계가 일치하지 않습니다. 데이터 관리의 수치 대사표를 확인하세요.</div> : null}
+          {reconciliationWarning ? (
+            <div className="reconciliation-alert" role="alert">
+              <div>
+                <strong>기간 합계와 세부 합계 {reconciliationMismatchCount}개가 일치하지 않습니다.</strong>
+                <span>{appliedOverrideDays > 0 ? `관리자 수정 합계 ${appliedOverrideDays}일이 적용되었습니다. 세부 원천에는 임의 배분하지 않았습니다.` : "누락·중복 또는 원천 데이터 연결 상태를 확인해 주세요."}</span>
+              </div>
+              {canManageData && activeMenu !== "data" ? <button className="pill" type="button" onClick={() => requestMenuChange("data")}>수치 대사표 확인</button> : null}
+            </div>
+          ) : null}
           <section className="hero-row">
             <div>
               <h1>{pageMeta[activeMenu].title}</h1>
