@@ -783,10 +783,9 @@ export default function Home() {
   const [validationResults, setValidationResults] = useState<string>("");
   const [importedRows, setImportedRows] = useState<ImportedDashboardRows>(emptyImportedRows());
   const [aiEvidenceOpen, setAiEvidenceOpen] = useState(false);
-  const [loginOpen, setLoginOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginEmail, setLoginEmail] = useState("admin@hospital.local");
-  const [loginPassword, setLoginPassword] = useState("");
   const [templateType, setTemplateType] = useState<ImportTableKey>("leads");
   const [dailyData, setDailyData] = useState<DailyDataRow[]>([]);
   const [isDataDirty, setIsDataDirty] = useState(false);
@@ -3738,9 +3737,9 @@ export default function Home() {
       </div>
       <div className="mypage-actions">
         {isAuthenticated ? (
-          <button className="pill subtle" type="button" onClick={() => setIsAuthenticated(false)}>로그아웃</button>
+          <a className="pill subtle" href="/signout-with-chatgpt?return_to=/">로그아웃</a>
         ) : (
-          <button className="primary-button" type="button" onClick={() => setLoginOpen(true)}>로그인</button>
+          <a className="primary-button" href="/signin-with-chatgpt?return_to=/">ChatGPT로 로그인</a>
         )}
       </div>
       <div className="account-detail-grid">
@@ -3900,29 +3899,27 @@ export default function Home() {
               </select>
               <span>▾</span>
             </label> : null}
-            <button className="profile-button" type="button" aria-label="프로필" onClick={() => setLoginOpen((open) => !open)}>
+            <button className="profile-button" type="button" aria-label="계정 정보" onClick={() => setAccountOpen((open) => !open)}>
               P
             </button>
           </div>
         </header>
 
-        {loginOpen && (
-          <section className="login-panel" aria-label="관리자 로그인">
+        {accountOpen && (
+          <section className="login-panel" aria-label="로그인 계정 정보">
             <div>
-              <span className="ai-pill">ADMIN ACCESS</span>
-              <h2>관리자 로그인</h2>
-              <p>병원별 계정으로 로그인하면 KPI, 업로드, 설정 메뉴를 권한에 맞게 확인할 수 있습니다.</p>
+              <span className="ai-pill">SECURE ACCESS</span>
+              <h2>{isAuthenticated ? "로그인 계정" : "로그인이 필요합니다"}</h2>
+              <p>{isAuthenticated ? `${loginEmail} · ${accessRole}` : "데이터는 ChatGPT 로그인과 사이트 접근 권한 확인 후에만 표시됩니다."}</p>
             </div>
-            <form onSubmit={(event) => {
-              event.preventDefault();
-              setIsAuthenticated(true);
-              setActiveMenu("settings");
-              setLoginOpen(false);
-            }}>
-              <label>이메일<input type="email" value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} /></label>
-              <label>비밀번호<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} placeholder="프로토타입 입력" /></label>
-              <button className="primary-button" type="submit">로그인</button>
-            </form>
+            <div className="account-session-actions">
+              {isAuthenticated ? (
+                <a className="primary-button" href="/signout-with-chatgpt?return_to=/">로그아웃</a>
+              ) : (
+                <a className="primary-button" href="/signin-with-chatgpt?return_to=/">ChatGPT로 로그인</a>
+              )}
+              <button className="pill" type="button" onClick={() => setAccountOpen(false)}>닫기</button>
+            </div>
           </section>
         )}
 

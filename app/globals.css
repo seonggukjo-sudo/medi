@@ -961,6 +961,18 @@ button {
   gap: 12px;
 }
 
+.account-session-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.account-session-actions a,
+.mypage-actions a {
+  text-decoration: none;
+}
+
 .login-panel label {
   display: grid;
   gap: 6px;

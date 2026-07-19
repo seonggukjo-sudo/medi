@@ -1,6 +1,8 @@
 import { env } from "cloudflare:workers";
+import { accessErrorResponse, requireAccess } from "@/lib/server-access";
 
 export const runtime = "edge";
+const hospitalId = "demo-hospital";
 
 type RuntimeEnv = {
   GA4_PROPERTY_ID?: string;
@@ -147,6 +149,7 @@ function isDate(value: string | null) {
 
 export async function GET(request: Request) {
   try {
+    await requireAccess(request, hospitalId);
     const runtimeEnv = env as unknown as RuntimeEnv;
     const propertyId = runtimeEnv.GA4_PROPERTY_ID;
     const clientEmail = runtimeEnv.GA4_CLIENT_EMAIL;
@@ -261,7 +264,6 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "GA4 조회 중 알 수 없는 오류가 발생했습니다.";
-    return Response.json({ configured: true, error: message }, { status: 502 });
+    return accessErrorResponse(error, "GA4 조회 중 알 수 없는 오류가 발생했습니다.");
   }
 }

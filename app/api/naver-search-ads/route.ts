@@ -1,6 +1,8 @@
 import { env } from "cloudflare:workers";
+import { accessErrorResponse, requireAccess } from "@/lib/server-access";
 
 export const runtime = "edge";
+const hospitalId = "demo-hospital";
 
 type RuntimeEnv = {
   NAVER_SEARCH_AD_CUSTOMER_ID?: string;
@@ -118,6 +120,7 @@ function listDates(start: string, end: string) {
 
 export async function GET(request: Request) {
   try {
+    await requireAccess(request, hospitalId);
     const runtimeEnv = env as unknown as RuntimeEnv;
     const customerId = runtimeEnv.NAVER_SEARCH_AD_CUSTOMER_ID;
     const apiKey = runtimeEnv.NAVER_SEARCH_AD_API_KEY;
@@ -263,7 +266,6 @@ export async function GET(request: Request) {
       syncedAt: new Date().toISOString(),
     }, { headers: { "cache-control": "private, no-store" } });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "네이버 검색광고 조회 중 오류가 발생했습니다.";
-    return Response.json({ configured: true, error: message }, { status: 502 });
+    return accessErrorResponse(error, "네이버 검색광고 조회 중 오류가 발생했습니다.");
   }
 }
