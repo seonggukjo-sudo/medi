@@ -837,6 +837,7 @@ export default function Home() {
   const [validationResults, setValidationResults] = useState<string>("");
   const [importedRows, setImportedRows] = useState<ImportedDashboardRows>(emptyImportedRows());
   const [aiEvidenceOpen, setAiEvidenceOpen] = useState(false);
+  const [selectedKpiLabel, setSelectedKpiLabel] = useState<string | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginEmail, setLoginEmail] = useState("admin@hospital.local");
@@ -1840,6 +1841,28 @@ export default function Home() {
     });
   }, [actualKpiResult, comparisonLabel, countDelta, kpiGoalStatus, mergedAdSourceRows.length, mergedAdSourceTotals.spend, previousKpiResult, rateDelta]);
 
+  const selectedKpiDetail = useMemo(() => {
+    if (!selectedKpiLabel) return null;
+    const card = executiveKpiCards.find((item) => item.label === selectedKpiLabel);
+    if (!card) return null;
+    const definitions: Record<string, { formula: string; sources: string; validation: string }> = {
+      "전체 문의": { formula: "전화 유효 문의 + 온라인 유효 문의", sources: "CRM 상담·문의 원천", validation: "진료과목별 문의 합계와 대사" },
+      "전체 예약": { formula: "선택 기간의 예약 완료 건수", sources: "CRM 예약 원천", validation: "진료과목별 예약 합계와 대사" },
+      "예약률": { formula: "전체 예약 ÷ 전체 유효 문의 × 100", sources: "CRM 상담·문의 + 예약 원천", validation: "문의가 0이면 평가 보류" },
+      "신환 내원": { formula: "선택 기간의 전체 신규 환자", sources: "CRM 내원 원천", validation: "진료과목·내원경로 합계와 대사" },
+      "문의→내원율": { formula: "신환 내원 ÷ 전체 유효 문의 × 100", sources: "CRM 상담·문의 + 내원 원천", validation: "동일 기간 집계 여부 확인" },
+      "총 매출": { formula: "결제 금액 - 환불 금액", sources: "CRM 결제·환불 원천", validation: "일자별 매출 합계와 대사" },
+      "총 광고비": { formula: "선택 기간 매체별 광고비 합계", sources: "네이버 검색광고·플레이스·업로드 광고 원천", validation: "매체별 광고비 합계와 대사" },
+      "ROAS": { formula: "총 매출 ÷ 총 광고비 × 100", sources: "CRM 결제·환불 + 광고 매체 원천", validation: "광고비가 0이면 평가 보류" },
+    };
+    const definition = definitions[card.label] ?? { formula: "선택 기간 집계", sources: "연결된 원천 데이터", validation: "기간 합계와 세부 합계 대사" };
+    return {
+      card,
+      ...definition,
+      reconciliation: reconciliationWarning ? "합계 불일치 · 데이터 관리 확인 필요" : "기간 합계와 세부 합계 일치",
+    };
+  }, [executiveKpiCards, reconciliationWarning, selectedKpiLabel]);
+
   const kpiDecisionData = useMemo(() => {
     const summary = actualKpiResult?.summary;
     const totals = {
@@ -2320,7 +2343,7 @@ export default function Home() {
         <p className="section-helper">광고 유입부터 문의·예약·내원·매출까지 동일한 선택 기간과 계산식으로 연결한 핵심 지표입니다.</p>
         <div className="kpi-grid">
           {executiveKpiCards.map((card) => (
-            <MetricCardView key={card.label} card={card} onClick={() => setActiveMenu("data")} />
+            <MetricCardView key={card.label} card={card} onClick={() => setSelectedKpiLabel(card.label)} />
           ))}
         </div>
         <div className="marketing-flow-strip" aria-label="마케팅 CRM 전체 흐름">
@@ -4213,6 +4236,38 @@ export default function Home() {
           {content}
         </div>
       </main>
+
+      {selectedKpiDetail ? (
+        <div className="kpi-detail-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setSelectedKpiLabel(null); }}>
+          <section className="kpi-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="kpi-detail-title">
+            <div className="kpi-detail-head">
+              <div>
+                <span className="source-badge live">KPI 계산 근거</span>
+                <h2 id="kpi-detail-title">{selectedKpiDetail.card.label}</h2>
+              </div>
+              <button type="button" className="kpi-detail-close" onClick={() => setSelectedKpiLabel(null)} aria-label="KPI 상세 닫기">닫기</button>
+            </div>
+            <div className="kpi-detail-value">
+              <strong>{selectedKpiDetail.card.value}</strong>
+              <span className={selectedKpiDetail.card.delta.startsWith("-") ? "down" : "up"}>{selectedKpiDetail.card.delta}</span>
+              {selectedKpiDetail.card.goalText ? <small>{selectedKpiDetail.card.goalText}</small> : null}
+            </div>
+            <dl className="kpi-detail-grid">
+              <div><dt>집계 기간</dt><dd>{periodDefinition.range}</dd></div>
+              <div><dt>비교 기준</dt><dd>{periodDefinition.compare}</dd></div>
+              <div><dt>계산식</dt><dd>{selectedKpiDetail.formula}</dd></div>
+              <div><dt>사용 원천</dt><dd>{selectedKpiDetail.sources}</dd></div>
+              <div><dt>검증 기준</dt><dd>{selectedKpiDetail.validation}</dd></div>
+              <div><dt>대사 결과</dt><dd className={reconciliationWarning ? "warn" : "pass"}>{selectedKpiDetail.reconciliation}</dd></div>
+            </dl>
+            <p className="kpi-detail-note">비교 증감과 목표 평가는 위 집계 기간과 동일한 원천 데이터만 사용합니다.</p>
+            <div className="kpi-detail-actions">
+              <button className="pill" type="button" onClick={() => setSelectedKpiLabel(null)}>계속 보기</button>
+              {canManageData ? <button className="primary-button" type="button" onClick={() => { setSelectedKpiLabel(null); setActiveMenu("data"); }}>원천 데이터 확인</button> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

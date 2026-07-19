@@ -61,3 +61,16 @@ test("매체별 클릭부터 내원까지 귀속 병목을 검증한다", async 
   assert.match(page, /part <= total/);
   assert.match(page, /귀속 확인 필요/);
 });
+
+test("KPI 카드는 계산 근거와 원천 데이터 이동 경로를 제공한다", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(page, /KPI 계산 근거/);
+  assert.match(page, /집계 기간/);
+  assert.match(page, /계산식/);
+  assert.match(page, /사용 원천/);
+  assert.match(page, /대사 결과/);
+  assert.match(page, /원천 데이터 확인/);
+  assert.match(css, /\.kpi-detail-dialog/);
+  assert.match(css, /@media \(max-width: 640px\)/);
+});
