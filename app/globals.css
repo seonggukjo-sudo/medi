@@ -2612,10 +2612,22 @@ body {
 }
 
 .settings-save-button {
-  margin-top: 12px;
+  margin-top: 0;
 }
 
 .settings-save-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.settings-save-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-cancel-button:disabled {
   cursor: not-allowed;
   opacity: 0.42;
 }
@@ -4057,7 +4069,7 @@ body {
 }
 
 .settings-save-button {
-  margin-top: 12px;
+  margin-top: 0;
 }
 
 .settings-save-button:disabled {

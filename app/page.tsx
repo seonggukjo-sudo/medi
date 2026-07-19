@@ -335,6 +335,19 @@ type KpiTargetRow = {
   channel: string;
 };
 
+type SettingsSnapshot = {
+  hospitalName: string;
+  hospitalLocation: string;
+  locale: string;
+  defaultPeriod: PeriodOption;
+  compare: CompareOption;
+  notifications: { errors: boolean; summary: boolean; changes: boolean };
+  users: UserAccessRow[];
+  kpiTargets: KpiTargetRow[];
+  aiSettings: { enabled: boolean; frequency: string; compare: string; anomaly: string; recommendation: string };
+  ga4Automation: boolean;
+};
+
 const initialUsers: UserAccessRow[] = [
   { email: "admin@hospital.local", name: "김관리", organization: "서울 본원", role: "최고관리자", recentAccess: "접속 기록 없음" },
 ];
@@ -884,16 +897,17 @@ export default function Home() {
   const [settingsSaveState, setSettingsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dailyEditBackupRef = useRef<DailyDataRow[] | null>(null);
+  const settingsBackupRef = useRef<SettingsSnapshot | null>(null);
 
   useEffect(() => {
-    if (!isDataDirty) return;
+    if (!isDataDirty && !isSettingsDirty) return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [isDataDirty]);
+  }, [isDataDirty, isSettingsDirty]);
 
   useEffect(() => {
     queueMicrotask(() => setIsClientReady(true));
@@ -951,18 +965,39 @@ export default function Home() {
       const settingsBody = settingsResult.value;
       startTransition(() => {
         const saved = settingsBody.settings || {};
-        setHospitalName(saved.hospitalName || "메디인사이트");
-        setHospitalLocation(saved.hospitalLocation || "서울 본원");
-        setSettingsLocale(saved.locale || "한국어");
-        setSettingsPeriod(saved.defaultPeriod || "최근 7일");
+        const savedHospitalName = saved.hospitalName || "메디인사이트";
+        const savedHospitalLocation = saved.hospitalLocation || "서울 본원";
+        const savedLocale = saved.locale || "한국어";
+        const savedPeriod = saved.defaultPeriod || "최근 7일";
         const savedCompare = compareOptions.includes(saved.compare as CompareOption) ? saved.compare as CompareOption : "직전 동일 기간";
+        const savedNotifications = saved.notifications || { errors: true, summary: true, changes: false };
+        const savedTargets = Array.isArray(saved.kpiTargets) && saved.kpiTargets.length > 0 ? saved.kpiTargets : initialKpiTargets;
+        const savedAiSettings = saved.aiSettings || { enabled: true, frequency: "매일 오전 9시", compare: "전주 동일기간", anomaly: "10% 이상", recommendation: "핵심 3개" };
+        const savedGa4Automation = typeof saved.ga4Automation === "boolean" ? saved.ga4Automation : true;
+        const savedUsers = Array.isArray(settingsBody.users) ? settingsBody.users : initialUsers;
+        setHospitalName(savedHospitalName);
+        setHospitalLocation(savedHospitalLocation);
+        setSettingsLocale(savedLocale);
+        setSettingsPeriod(savedPeriod);
         setSettingsCompare(savedCompare);
         setCompareOption(savedCompare);
-        if (saved.notifications) setNotifications(saved.notifications);
-        if (Array.isArray(saved.kpiTargets) && saved.kpiTargets.length > 0) setKpiTargets(saved.kpiTargets);
-        if (saved.aiSettings) setAiSettings(saved.aiSettings);
-        if (typeof saved.ga4Automation === "boolean") setGa4Automation(saved.ga4Automation);
-        if (Array.isArray(settingsBody.users)) setUsers(settingsBody.users);
+        setNotifications(savedNotifications);
+        setKpiTargets(savedTargets);
+        setAiSettings(savedAiSettings);
+        setGa4Automation(savedGa4Automation);
+        setUsers(savedUsers);
+        settingsBackupRef.current = {
+          hospitalName: savedHospitalName,
+          hospitalLocation: savedHospitalLocation,
+          locale: savedLocale,
+          defaultPeriod: savedPeriod,
+          compare: savedCompare,
+          notifications: { ...savedNotifications },
+          users: savedUsers.map((user: UserAccessRow) => ({ ...user })),
+          kpiTargets: savedTargets.map((target: KpiTargetRow) => ({ ...target })),
+          aiSettings: { ...savedAiSettings },
+          ga4Automation: savedGa4Automation,
+        };
         setSettingsHistory(settingsBody.history || []);
         setLoginEmail(settingsBody.access.email);
         setAccessRole(settingsBody.access.roleLabel);
@@ -1368,6 +1403,37 @@ export default function Home() {
           ? "최고관리자를 최소 1명 유지해야 합니다."
           : "";
 
+  const captureSettingsSnapshot = (): SettingsSnapshot => ({
+    hospitalName,
+    hospitalLocation,
+    locale: settingsLocale,
+    defaultPeriod: settingsPeriod,
+    compare: settingsCompare,
+    notifications: { ...notifications },
+    users: users.map((user) => ({ ...user })),
+    kpiTargets: kpiTargets.map((target) => ({ ...target })),
+    aiSettings: { ...aiSettings },
+    ga4Automation,
+  });
+
+  const discardSettingsChanges = () => {
+    const saved = settingsBackupRef.current;
+    if (!saved) return;
+    setHospitalName(saved.hospitalName);
+    setHospitalLocation(saved.hospitalLocation);
+    setSettingsLocale(saved.locale);
+    setSettingsPeriod(saved.defaultPeriod);
+    setSettingsCompare(saved.compare);
+    setNotifications({ ...saved.notifications });
+    setUsers(saved.users.map((user) => ({ ...user })));
+    setKpiTargets(saved.kpiTargets.map((target) => ({ ...target })));
+    setAiSettings({ ...saved.aiSettings });
+    setGa4Automation(saved.ga4Automation);
+    setIsSettingsDirty(false);
+    setSettingsSaveState("idle");
+    setValidationResults("마지막으로 저장된 설정으로 되돌렸습니다.");
+  };
+
   const saveSettings = async () => {
     if (!canManageSettings) return;
     if (userAccessValidation) {
@@ -1388,10 +1454,14 @@ export default function Home() {
       if (!response.ok) throw new Error(body.error || "설정을 저장하지 못했습니다.");
       setPeriod(settingsPeriod);
       setCompareOption(settingsCompare);
+      settingsBackupRef.current = captureSettingsSnapshot();
       setIsSettingsDirty(false);
       setSettingsSaveState("saved");
       setValidationResults("설정이 서버에 영구 저장되고 변경 이력에 기록되었습니다.");
       setSettingsHistory((current) => [{ userId: loginEmail, action: "settings_saved", createdAt: body.updatedAt, metadata: { userCount: users.length } }, ...current].slice(0, 20));
+      const nextMenu = pendingMenu;
+      setPendingMenu(null);
+      if (nextMenu) setActiveMenu(nextMenu);
     } catch (error) {
       setSettingsSaveState("error");
       setValidationResults(error instanceof Error ? error.message : "설정을 저장하지 못했습니다.");
@@ -2451,7 +2521,7 @@ export default function Home() {
   };
 
   const requestMenuChange = (menu: MenuKey) => {
-    if (activeMenu === "data" && menu !== "data" && isDataDirty) {
+    if (menu !== activeMenu && (isDataDirty || isSettingsDirty)) {
       setPendingMenu(menu);
       return;
     }
@@ -2459,12 +2529,15 @@ export default function Home() {
   };
 
   const discardDailyChangesAndNavigate = () => {
-    if (dailyEditBackupRef.current) setDailyData(dailyEditBackupRef.current);
-    dailyEditBackupRef.current = null;
-    setEditedDailyDates([]);
-    setIsDataDirty(false);
-    setDailyEditReason("");
-    setDailySaveState("idle");
+    if (isDataDirty) {
+      if (dailyEditBackupRef.current) setDailyData(dailyEditBackupRef.current);
+      dailyEditBackupRef.current = null;
+      setEditedDailyDates([]);
+      setIsDataDirty(false);
+      setDailyEditReason("");
+      setDailySaveState("idle");
+    }
+    if (isSettingsDirty) discardSettingsChanges();
     const nextMenu = pendingMenu;
     setPendingMenu(null);
     if (nextMenu) setActiveMenu(nextMenu);
@@ -3999,7 +4072,10 @@ export default function Home() {
               ? " 로그인 상태에서는 바로 변경과 확인을 이어서 볼 수 있습니다."
               : " 로그인하면 같은 화면에서 바로 수정 흐름으로 이어집니다."}
           </p>
-          <button className="primary-button settings-save-button" type="button" disabled={!isSettingsDirty || !canManageSettings || Boolean(userAccessValidation) || settingsSaveState === "saving"} onClick={saveSettings}>{settingsSaveState === "saving" ? "저장 중" : "설정 저장"}</button>
+          <div className="settings-save-actions">
+            <button className="primary-button settings-save-button" type="button" disabled={!isSettingsDirty || !canManageSettings || Boolean(userAccessValidation) || settingsSaveState === "saving"} onClick={saveSettings}>{settingsSaveState === "saving" ? "저장 중" : "설정 저장"}</button>
+            <button className="pill settings-cancel-button" type="button" disabled={!isSettingsDirty || settingsSaveState === "saving"} onClick={discardSettingsChanges}>변경 취소</button>
+          </div>
           {!canManageSettings ? <p className="permission-note">현재 권한({accessRole})은 설정 조회만 가능합니다.</p> : null}
         </div>
 
@@ -4557,9 +4633,10 @@ export default function Home() {
           <section className="unsaved-dialog" role="alertdialog" aria-modal="true" aria-labelledby="unsaved-title" aria-describedby="unsaved-description">
             <span className="source-badge review">저장 전 확인</span>
             <h2 id="unsaved-title">저장하지 않은 변경사항이 있습니다.</h2>
-            <p id="unsaved-description">일자별 수치 {editedDailyDates.length}일과 수정 사유가 아직 서버에 저장되지 않았습니다.</p>
+            <p id="unsaved-description">{isSettingsDirty ? "설정 변경사항이 아직 서버에 저장되지 않았습니다." : `일자별 수치 ${editedDailyDates.length}일과 수정 사유가 아직 서버에 저장되지 않았습니다.`}</p>
             <div className="unsaved-actions">
               <button className="pill" type="button" onClick={() => setPendingMenu(null)}>계속 수정</button>
+              {isSettingsDirty && !isDataDirty ? <button className="primary-button" type="button" disabled={Boolean(userAccessValidation) || settingsSaveState === "saving"} onClick={saveSettings}>{settingsSaveState === "saving" ? "저장 중" : "저장 후 이동"}</button> : null}
               <button className="danger-button" type="button" onClick={discardDailyChangesAndNavigate}>변경 취소 후 이동</button>
             </div>
           </section>
