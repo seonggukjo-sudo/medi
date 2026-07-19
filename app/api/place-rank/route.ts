@@ -24,6 +24,9 @@ type ApifyRankResult = {
   placeId?: string;
   rank?: number | null;
   blocked?: boolean;
+  checkedCount?: number;
+  maxRank?: number;
+  outsideTop100?: boolean;
   checkedAt?: string;
   message?: string;
 };
@@ -40,6 +43,9 @@ type ProviderPlaceItem = {
   isSponsored?: boolean;
   ad?: boolean;
   isAd?: boolean;
+  checkedCount?: number;
+  maxRank?: number;
+  outsideTop100?: boolean;
   type?: string;
   resultType?: string;
   message?: string;
@@ -82,6 +88,25 @@ function hasProviderRankField(item: ProviderPlaceItem) {
   return ["naturalRank", "organicRank", "rank", "position"].some((key) => key in item);
 }
 
+function completedTop100Scan(item: ProviderPlaceItem) {
+  if (item.outsideTop100 === true) return true;
+  const checkedCount = Number(item.checkedCount);
+  const requestedMax = Math.min(Number(item.maxRank) || 100, 100);
+  return Number.isInteger(checkedCount) && checkedCount >= requestedMax;
+}
+
+function emptyProviderScan(item: ProviderPlaceItem) {
+  return Number(item.checkedCount) === 0;
+}
+
+function providerCheckedCount(payload: ProviderPayload) {
+  const items = providerItems(payload);
+  if (items.length > 1) return items.filter((item) => !isSponsoredProviderItem(item)).length;
+  const body = (items[0] ?? (Array.isArray(payload) ? payload[0] : payload) ?? {}) as ProviderPlaceItem;
+  const checkedCount = Number(body.checkedCount);
+  return Number.isInteger(checkedCount) && checkedCount >= 0 ? checkedCount : undefined;
+}
+
 function resolveProviderRank(payload: ProviderPayload, keyword: PlaceRankKeyword) {
   const items = providerItems(payload);
   if (items.length) {
@@ -94,6 +119,9 @@ function resolveProviderRank(payload: ProviderPayload, keyword: PlaceRankKeyword
     if (target.blocked === true) {
       return { rank: null, blocked: true, outsideTop100: false, message: target.message || target.error || "검색 공급자가 측정을 차단했습니다." };
     }
+    if (emptyProviderScan(target)) {
+      return { rank: null, blocked: true, outsideTop100: false, message: "검색 결과를 한 건도 읽지 못해 순위를 확인할 수 없습니다." };
+    }
     // Some providers return only the matched place in `results`, with its
     // absolute rank attached to the item. Do not mistake that one-item array
     // for a full result list, or a real 11th place becomes 1st place.
@@ -101,7 +129,7 @@ function resolveProviderRank(payload: ProviderPayload, keyword: PlaceRankKeyword
     if (explicitRank !== null) {
       return { rank: explicitRank, blocked: false, outsideTop100: false, message: target.message };
     }
-    if (hasProviderRankField(target)) {
+    if (hasProviderRankField(target) && completedTop100Scan(target)) {
       return { rank: null, blocked: false, outsideTop100: true, message: target.message || "100위 밖" };
     }
     if (naturalItems.length > 1) {
@@ -120,9 +148,12 @@ function resolveProviderRank(payload: ProviderPayload, keyword: PlaceRankKeyword
   if (body.placeId && String(body.placeId) !== keyword.placeId) {
     return { rank: null, blocked: false, message: "공급자가 반환한 Place ID가 등록 대상과 다릅니다." };
   }
+  if (emptyProviderScan(body)) {
+    return { rank: null, blocked: true, outsideTop100: false, message: "검색 결과를 한 건도 읽지 못해 순위를 확인할 수 없습니다." };
+  }
   const measuredRank = explicitProviderRank(body);
   const rank = Number.isInteger(measuredRank) && measuredRank >= 1 && measuredRank <= 100 ? measuredRank : null;
-  const outsideTop100 = body.blocked !== true && hasProviderRankField(body) && rank === null;
+  const outsideTop100 = body.blocked !== true && rank === null && completedTop100Scan(body);
   return {
     rank,
     blocked: body.blocked === true,
@@ -213,16 +244,22 @@ async function syncScheduledRuns(
       if (existing.has(dedupeKey)) continue;
       const measuredRank = Number(result.rank);
       const rank = Number.isInteger(measuredRank) && measuredRank >= 1 && measuredRank <= 100 ? measuredRank : null;
+      const checkedCount = Number(result.checkedCount);
+      const completedScan = result.outsideTop100 === true
+        || (Number.isInteger(checkedCount) && checkedCount >= Math.min(Number(result.maxRank) || 100, 100));
+      const measurementFailed = result.blocked === true || (rank === null && !completedScan);
       const snapshot: PlaceRankSnapshot = {
         keywordId: keyword.id,
         date,
         rank,
-        outsideTop100: !result.blocked && rank === null,
-        status: result.blocked ? "failed" : "measured",
+        outsideTop100: !measurementFailed && rank === null,
+        status: measurementFailed ? "failed" : "measured",
         source: "authorized-provider",
         checkedAt,
         rankMethod: "provider-absolute",
         trigger: "scheduled",
+        checkedCount: Number.isInteger(checkedCount) ? checkedCount : undefined,
+        maxRank: Number(result.maxRank) || 100,
         message: result.message || (rank === null && !result.blocked ? "100위 밖" : undefined),
       };
       await writeAudit(runtimeEnv, access, "place_rank_snapshot", keyword.id, snapshot);
@@ -256,6 +293,7 @@ async function measureKeyword(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword,
   });
   const payload = await response.json().catch(() => ({})) as ProviderPayload;
   const resolved = resolveProviderRank(payload, keyword);
+  const checkedCount = providerCheckedCount(payload);
   if (!response.ok) throw new Error(resolved.message || `순위 공급자 조회 실패 (HTTP ${response.status})`);
   if (resolved.blocked) throw new Error(resolved.message || "검색 서비스의 접근 제한으로 순위를 측정하지 못했습니다.");
   if (resolved.rank === null && !resolved.outsideTop100) {
@@ -272,6 +310,8 @@ async function measureKeyword(runtimeEnv: RuntimeEnv, keyword: PlaceRankKeyword,
     checkedAt,
     rankMethod: "provider-absolute",
     trigger,
+    checkedCount,
+    maxRank: 100,
     message: resolved.message || (rank === null ? "100위 밖" : undefined),
   };
 }

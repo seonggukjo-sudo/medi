@@ -18,6 +18,8 @@ export type PlaceRankSnapshot = {
   rankMethod?: "provider-absolute";
   manualRecordVersion?: "current";
   trigger?: "scheduled" | "manual";
+  checkedCount?: number;
+  maxRank?: number;
   message?: string;
 };
 
@@ -81,12 +83,21 @@ export async function loadPlaceRankData(db: D1Database, hospitalId: string, star
       continue;
     }
     if (row.action === "place_rank_snapshot") {
-      const value = parseJson<PlaceRankSnapshot>(row.metadataJson);
+      let value = parseJson<PlaceRankSnapshot>(row.metadataJson);
       // Older provider snapshots were calculated from the returned array
       // position and could turn a real 11th-place result into 1st place.
       // Keep manual records, but hide legacy automatic records from all views.
       if (value?.source === "authorized-provider" && value.rankMethod !== "provider-absolute") continue;
       if (value?.source === "manual" && value.manualRecordVersion !== "current") continue;
+      if (value?.source === "authorized-provider" && value.outsideTop100 && !(Number(value.checkedCount) >= 100)) {
+        value = {
+          ...value,
+          rank: null,
+          outsideTop100: false,
+          status: "failed",
+          message: "100개 자연 검색 결과를 확인하지 못해 기존 순위 판정을 무효화했습니다.",
+        };
+      }
       const resetAt = snapshotResetAt.get(targetId);
       if (resetAt && row.createdAt <= resetAt) continue;
       if (!value || value.date < start || value.date > end) continue;
