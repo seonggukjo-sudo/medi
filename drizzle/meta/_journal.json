@@ -8,6 +8,13 @@
       "when": 1783814400000,
       "tag": "0000_medi_insight_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784590800000,
+      "tag": "0001_preserve_import_contract",
+      "breakpoints": true
     }
   ]
 }
