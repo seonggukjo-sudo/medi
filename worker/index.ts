@@ -1,6 +1,6 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
-import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "file:///C:/Users/seong/Documents/Codex/2026-07-11/sites-plugin-sites-openai-bundled/node_modules/vinext/dist/server/image-optimization.js";
-import handler from "file:///C:/Users/seong/Documents/Codex/2026-07-11/sites-plugin-sites-openai-bundled/node_modules/vinext/dist/server/app-router-entry.js";
+import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
+import handler from "vinext/server/app-router-entry";
 
 interface Env {
   ASSETS: Fetcher;

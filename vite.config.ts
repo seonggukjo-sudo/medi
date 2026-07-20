@@ -1,5 +1,5 @@
-import vinext from "file:///C:/Users/seong/Documents/Codex/2026-07-11/sites-plugin-sites-openai-bundled/node_modules/vinext/dist/index.js";
-import { defineConfig } from "file:///C:/Users/seong/Documents/Codex/2026-07-11/sites-plugin-sites-openai-bundled/node_modules/vite/dist/node/index.js";
+import vinext from "vinext";
+import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
 
@@ -41,9 +41,7 @@ export default defineConfig(async () => {
   process.env.MINIFLARE_REGISTRY_PATH ??= ".wrangler/registry";
 
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
-  const { cloudflare } = await import(
-    "file:///C:/Users/seong/Documents/Codex/2026-07-11/sites-plugin-sites-openai-bundled/node_modules/@cloudflare/vite-plugin/dist/index.mjs"
-  );
+  const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
     server: isCodexSeatbeltSandbox
