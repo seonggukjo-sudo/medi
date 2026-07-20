@@ -36,6 +36,17 @@ function csvCell(value: unknown) {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
+function hasKoreanHelperRows(rows: unknown[][]) {
+  if (rows.length < 4) return false;
+  const helperText = [rows[1], rows[2], rows[3]].flat().map((value) => String(value ?? "")).join(" ");
+  return /한글|항목|설명|예시|필수|선택|실제 데이터/.test(helperText);
+}
+
+function importableRows(rows: unknown[][]) {
+  if (!hasKoreanHelperRows(rows)) return rows;
+  return [rows[0], ...rows.slice(4)];
+}
+
 function rowsToCsv(rows: unknown[][]) {
   return `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
 }
@@ -95,7 +106,7 @@ export async function POST(request: Request) {
     const results = [];
     for (let index = 0; index < sheetTabs.length; index += 1) {
       const tab = sheetTabs[index];
-      const rows = sheetBody.valueRanges?.[index]?.values ?? [];
+      const rows = importableRows(sheetBody.valueRanges?.[index]?.values ?? []);
       if (rows.length <= 1) {
         results.push({ tableKey: tab.tableKey, status: "empty", savedRows: 0 });
         continue;

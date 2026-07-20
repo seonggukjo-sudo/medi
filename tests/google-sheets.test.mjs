@@ -6,6 +6,9 @@ test("Google Sheets sync uses the existing validated upload pipeline", async () 
   const route = await readFile(new URL("../app/api/google-sheets/route.ts", import.meta.url), "utf8");
   assert.match(route, /spreadsheets\.readonly/);
   assert.match(route, /values:batchGet/);
+  assert.match(route, /hasKoreanHelperRows/);
+  assert.match(route, /importableRows/);
+  assert.match(route, /rows\.slice\(4\)/);
   assert.match(route, /new URL\("\/api\/uploads", request\.url\)/);
   assert.match(route, /\["owner", "admin", "marketer"\]/);
   assert.match(route, /google_sheet_sync/);
