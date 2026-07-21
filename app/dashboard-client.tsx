@@ -2169,6 +2169,23 @@ export default function Home() {
     });
   }, [actualKpiResult, comparisonLabel, countDelta, kpiGoalStatus, mergedAdSourceRows.length, mergedAdSourceTotals.spend, previousKpiResult, rateDelta]);
 
+  const dimensionReconciliation = actualKpiResult
+    ? [
+      { metric: "departmentInquiries", total: actualKpiResult.summary.inquiry, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.inquiries, 0) },
+      { metric: "departmentPhoneInquiries", total: actualKpiResult.summary.phoneInquiry, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.phoneInquiries, 0) },
+      { metric: "departmentOnlineInquiries", total: actualKpiResult.summary.onlineInquiry, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.onlineInquiries, 0) },
+      { metric: "departmentReservations", total: actualKpiResult.summary.reservation, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.reservations, 0) },
+      { metric: "departmentPhoneReservations", total: actualKpiResult.summary.phoneReservation, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.phoneReservations, 0) },
+      { metric: "departmentOnlineReservations", total: actualKpiResult.summary.onlineReservation, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.onlineReservations, 0) },
+      { metric: "departmentNewVisits", total: actualKpiResult.summary.newVisit, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.newVisits, 0) },
+      { metric: "channelInquiries", total: actualKpiResult.summary.inquiry, detailTotal: actualKpiResult.channels.reduce((sum, row) => sum + row.inquiries, 0) },
+      { metric: "channelReservations", total: actualKpiResult.summary.reservation, detailTotal: actualKpiResult.channels.reduce((sum, row) => sum + row.reservations, 0) },
+      { metric: "referralNewVisits", total: actualKpiResult.summary.newVisit, detailTotal: actualKpiResult.referrals.reduce((sum, row) => sum + row.newVisits, 0) },
+    ].map((row) => ({ ...row, passed: row.total === row.detailTotal }))
+    : [];
+  const reconciliationRows = [...(dataQuality?.reconciliation ?? []), ...dimensionReconciliation];
+  const reconciliationWarning = reconciliationRows.some((row) => !row.passed);
+
   const selectedKpiDetail = useMemo(() => {
     if (!selectedKpiLabel) return null;
     const card = executiveKpiCards.find((item) => item.label === selectedKpiLabel);
@@ -2277,22 +2294,6 @@ export default function Home() {
   const baseDataStatus = dataSourceState === "live"
     ? (dataQuality && (dataQuality.warnings.missingLinks > 0 || dataQuality.warnings.duplicates > 0 || dataQuality.reconciliation.some((row) => !row.passed)) ? "부분 연동" : "정상 연동")
     : dataSourceState === "loading" ? "연결 확인 중" : "미연동";
-  const dimensionReconciliation = actualKpiResult
-    ? [
-      { metric: "departmentInquiries", total: actualKpiResult.summary.inquiry, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.inquiries, 0) },
-      { metric: "departmentPhoneInquiries", total: actualKpiResult.summary.phoneInquiry, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.phoneInquiries, 0) },
-      { metric: "departmentOnlineInquiries", total: actualKpiResult.summary.onlineInquiry, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.onlineInquiries, 0) },
-      { metric: "departmentReservations", total: actualKpiResult.summary.reservation, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.reservations, 0) },
-      { metric: "departmentPhoneReservations", total: actualKpiResult.summary.phoneReservation, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.phoneReservations, 0) },
-      { metric: "departmentOnlineReservations", total: actualKpiResult.summary.onlineReservation, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.onlineReservations, 0) },
-      { metric: "departmentNewVisits", total: actualKpiResult.summary.newVisit, detailTotal: actualKpiResult.departments.reduce((sum, row) => sum + row.newVisits, 0) },
-      { metric: "channelInquiries", total: actualKpiResult.summary.inquiry, detailTotal: actualKpiResult.channels.reduce((sum, row) => sum + row.inquiries, 0) },
-      { metric: "channelReservations", total: actualKpiResult.summary.reservation, detailTotal: actualKpiResult.channels.reduce((sum, row) => sum + row.reservations, 0) },
-      { metric: "referralNewVisits", total: actualKpiResult.summary.newVisit, detailTotal: actualKpiResult.referrals.reduce((sum, row) => sum + row.newVisits, 0) },
-    ].map((row) => ({ ...row, passed: row.total === row.detailTotal }))
-    : [];
-  const reconciliationRows = [...(dataQuality?.reconciliation ?? []), ...dimensionReconciliation];
-  const reconciliationWarning = reconciliationRows.some((row) => !row.passed);
   const reconciliationMismatchCount = reconciliationRows.filter((row) => !row.passed).length;
   const appliedOverrideDays = dataQuality?.overrides?.length ?? 0;
   const commonDataStatus = baseDataStatus === "정상 연동" && reconciliationWarning ? "부분 연동" : baseDataStatus;
