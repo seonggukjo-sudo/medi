@@ -5,7 +5,7 @@ import test from "node:test";
 async function readSources() {
   const [pageSource, dataSource, importContractSource, importValidatorSource, kpiCalculatorSource, sampleKpiSource, layoutSource, previewSource, planSource, mappingSource, serverDesignSource, hostingSource, schemaSource] =
     await Promise.all([
-      readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../app/dashboard-client.tsx", import.meta.url), "utf8"),
       readFile(new URL("../lib/dashboard-data.ts", import.meta.url), "utf8"),
       readFile(new URL("../lib/data-import-contract.ts", import.meta.url), "utf8"),
       readFile(new URL("../lib/import-validator.ts", import.meta.url), "utf8"),

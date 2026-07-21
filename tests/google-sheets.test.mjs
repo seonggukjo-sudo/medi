@@ -27,7 +27,7 @@ test("Google service account authentication is server-side and read-only", async
 });
 
 test("Settings provides template download, connection status, and manual sync", async () => {
-  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const page = await readFile(new URL("../app/dashboard-client.tsx", import.meta.url), "utf8");
   const settings = await readFile(new URL("../app/api/settings/route.ts", import.meta.url), "utf8");
   assert.match(page, /medi-insight-google-sheets-template\.xlsx/);
   assert.match(page, /구글 시트 주소 또는 ID/);

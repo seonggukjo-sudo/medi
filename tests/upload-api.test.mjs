@@ -6,7 +6,7 @@ const uploadRouteUrl = new URL("../app/api/uploads/route.ts", import.meta.url);
 const dataQualityRouteUrl = new URL("../app/api/data-quality/route.ts", import.meta.url);
 const dailyOverridesUrl = new URL("../lib/daily-metric-overrides.ts", import.meta.url);
 const dailyDataRouteUrl = new URL("../app/api/daily-data/route.ts", import.meta.url);
-const pageUrl = new URL("../app/page.tsx", import.meta.url);
+const pageUrl = new URL("../app/dashboard-client.tsx", import.meta.url);
 const updateDocUrl = new URL("../outputs/메디인사이트_운영저장구조_마이그레이션_업데이트.md", import.meta.url);
 
 test("서버 업로드 API는 CSV 원본을 R2에 저장하고 검증 결과를 D1에 남긴다", async () => {

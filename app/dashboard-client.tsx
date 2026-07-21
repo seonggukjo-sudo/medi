@@ -6,8 +6,10 @@ import { calculateImportedKpis, type ImportedDashboardRows, type ImportedKpiResu
 import { importTables, type ImportFieldType, type ImportTableKey } from "@/lib/data-import-contract";
 
 type MenuKey = "kpi" | "consult" | "ads" | "ga4" | "data" | "settings" | "mypage";
-type PeriodOption = "1일" | "최근 7일" | "최근 30일" | "지난달" | "이번달" | "직접입력";
-type CompareOption = "직전 동일 기간" | "전주 동일 기간" | "전월 동일 기간";
+type PeriodOption = "오늘" | "어제" | "이번주" | "지난주" | "최근7일(오늘포함)" | "최근7일(오늘제외)" | "이번달" | "지난달" | "직접입력";
+type CompareOption = "전일 기간" | "전주 동일 기간" | "전월 동일 기간";
+
+const defaultPeriodOption: PeriodOption = "최근7일(오늘제외)";
 
 type Tone = "green" | "violet" | "orange" | "blue";
 
@@ -510,18 +512,31 @@ function currentSeoulDate() {
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
+function startOfSeoulWeek(date: string) {
+  const value = new Date(`${date}T00:00:00Z`);
+  const day = value.getUTCDay();
+  const daysFromMonday = day === 0 ? 6 : day - 1;
+  return shiftIsoDate(date, -daysFromMonday);
+}
+
 function dynamicPeriodRange(option: Exclude<PeriodOption, "직접입력">) {
   const today = currentSeoulDate();
   const [year, month] = today.split("-").map(Number);
   const thisMonthStart = `${year}-${String(month).padStart(2, "0")}-01`;
   const previousMonthEnd = shiftIsoDate(thisMonthStart, -1);
   const previousMonthStart = `${previousMonthEnd.slice(0, 7)}-01`;
+  const thisWeekStart = startOfSeoulWeek(today);
+  const previousWeekEnd = shiftIsoDate(thisWeekStart, -1);
+  const previousWeekStart = shiftIsoDate(previousWeekEnd, -6);
   const ranges: Record<Exclude<PeriodOption, "직접입력">, { start: string; end: string }> = {
-    "1일": { start: today, end: today },
-    "최근 7일": { start: shiftIsoDate(today, -6), end: today },
-    "최근 30일": { start: shiftIsoDate(today, -29), end: today },
-    "지난달": { start: previousMonthStart, end: previousMonthEnd },
+    "오늘": { start: today, end: today },
+    "어제": { start: shiftIsoDate(today, -1), end: shiftIsoDate(today, -1) },
+    "이번주": { start: thisWeekStart, end: today },
+    "지난주": { start: previousWeekStart, end: previousWeekEnd },
+    "최근7일(오늘포함)": { start: shiftIsoDate(today, -6), end: today },
+    "최근7일(오늘제외)": { start: shiftIsoDate(today, -7), end: shiftIsoDate(today, -1) },
     "이번달": { start: thisMonthStart, end: today },
+    "지난달": { start: previousMonthStart, end: previousMonthEnd },
   };
   return ranges[option];
 }
@@ -532,15 +547,18 @@ function displayDateRange(start: string, end: string) {
 }
 
 const periodOptionDefinitions: Array<{ label: PeriodOption; range: string; compare: string }> = [
-  { label: "1일", range: displayDateRange(dynamicPeriodRange("1일").start, dynamicPeriodRange("1일").end), compare: "vs 전일" },
-  { label: "최근 7일", range: displayDateRange(dynamicPeriodRange("최근 7일").start, dynamicPeriodRange("최근 7일").end), compare: "vs 이전 7일" },
-  { label: "최근 30일", range: displayDateRange(dynamicPeriodRange("최근 30일").start, dynamicPeriodRange("최근 30일").end), compare: "vs 이전 30일" },
-  { label: "지난달", range: displayDateRange(dynamicPeriodRange("지난달").start, dynamicPeriodRange("지난달").end), compare: "vs 전월" },
-  { label: "이번달", range: displayDateRange(dynamicPeriodRange("이번달").start, dynamicPeriodRange("이번달").end), compare: "vs 전월 동기간" },
-  { label: "직접입력", range: "기간을 선택하세요", compare: "이전 동일 기간" },
+  { label: "오늘", range: displayDateRange(dynamicPeriodRange("오늘").start, dynamicPeriodRange("오늘").end), compare: "vs 전일 기간" },
+  { label: "어제", range: displayDateRange(dynamicPeriodRange("어제").start, dynamicPeriodRange("어제").end), compare: "vs 전일 기간" },
+  { label: "이번주", range: displayDateRange(dynamicPeriodRange("이번주").start, dynamicPeriodRange("이번주").end), compare: "vs 전일 기간" },
+  { label: "지난주", range: displayDateRange(dynamicPeriodRange("지난주").start, dynamicPeriodRange("지난주").end), compare: "vs 전일 기간" },
+  { label: "최근7일(오늘포함)", range: displayDateRange(dynamicPeriodRange("최근7일(오늘포함)").start, dynamicPeriodRange("최근7일(오늘포함)").end), compare: "vs 전일 기간" },
+  { label: "최근7일(오늘제외)", range: displayDateRange(dynamicPeriodRange("최근7일(오늘제외)").start, dynamicPeriodRange("최근7일(오늘제외)").end), compare: "vs 전일 기간" },
+  { label: "이번달", range: displayDateRange(dynamicPeriodRange("이번달").start, dynamicPeriodRange("이번달").end), compare: "vs 전일 기간" },
+  { label: "지난달", range: displayDateRange(dynamicPeriodRange("지난달").start, dynamicPeriodRange("지난달").end), compare: "vs 전일 기간" },
+  { label: "직접입력", range: "기간을 선택하세요", compare: "vs 전일 기간" },
 ];
 
-const compareOptions: CompareOption[] = ["직전 동일 기간", "전주 동일 기간", "전월 동일 기간"];
+const compareOptions: CompareOption[] = ["전일 기간", "전주 동일 기간", "전월 동일 기간"];
 
 function resolveComparisonDateRange(range: { start: string; end: string }, option: CompareOption) {
   if (option === "전주 동일 기간") return { start: shiftIsoDate(range.start, -7), end: shiftIsoDate(range.end, -7) };
@@ -845,15 +863,15 @@ export default function Home() {
   const [isClientReady, setIsClientReady] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuKey>("kpi");
   const [pendingMenu, setPendingMenu] = useState<MenuKey | null>(null);
-  const [customStartDate, setCustomStartDate] = useState(() => dynamicPeriodRange("최근 7일").start);
-  const [customEndDate, setCustomEndDate] = useState(() => dynamicPeriodRange("최근 7일").end);
-  const [period, setPeriod] = useState<PeriodOption>("최근 7일");
-  const [compareOption, setCompareOption] = useState<CompareOption>("직전 동일 기간");
+  const [customStartDate, setCustomStartDate] = useState(() => dynamicPeriodRange(defaultPeriodOption).start);
+  const [customEndDate, setCustomEndDate] = useState(() => dynamicPeriodRange(defaultPeriodOption).end);
+  const [period, setPeriod] = useState<PeriodOption>(defaultPeriodOption);
+  const [compareOption, setCompareOption] = useState<CompareOption>("전일 기간");
   const [hospitalName, setHospitalName] = useState("메디인사이트");
   const [hospitalLocation, setHospitalLocation] = useState("서울 본원");
   const [settingsLocale, setSettingsLocale] = useState("한국어");
-  const [settingsPeriod, setSettingsPeriod] = useState<PeriodOption>("최근 7일");
-  const [settingsCompare, setSettingsCompare] = useState<CompareOption>("직전 동일 기간");
+  const [settingsPeriod, setSettingsPeriod] = useState<PeriodOption>(defaultPeriodOption);
+  const [settingsCompare, setSettingsCompare] = useState<CompareOption>("전일 기간");
   const [isSettingsDirty, setIsSettingsDirty] = useState(false);
   const [users, setUsers] = useState<UserAccessRow[]>(initialUsers);
   const [kpiTargets, setKpiTargets] = useState<KpiTargetRow[]>(initialKpiTargets);
@@ -965,17 +983,17 @@ export default function Home() {
   ];
   const importedTotal = importedDataCounts.reduce((sum, item) => sum + item.count, 0);
   const selectedImportContract = importTables.find((table) => table.key === templateType) ?? importTables[0];
-  const isCustomPeriod = period === periodOptions[5].label;
+  const isCustomPeriod = period === "직접입력";
   const activeDateRange = resolvePeriodDateRange(period, customStartDate, customEndDate);
   const activePeriodDays = daysBetween(activeDateRange.start, activeDateRange.end);
   const comparisonDateRange = resolveComparisonDateRange(activeDateRange, compareOption);
-  const selectedPeriodDefinition = periodOptions.find((option) => option.label === period) ?? periodOptions[1];
+  const selectedPeriodDefinition = periodOptions.find((option) => option.label === period) ?? periodOptions.find((option) => option.label === defaultPeriodOption)!;
+  const comparisonRangeLabel = displayDateRange(comparisonDateRange.start, comparisonDateRange.end);
   const periodDefinition = {
     ...selectedPeriodDefinition,
     range: displayDateRange(activeDateRange.start, activeDateRange.end),
-    compare: `vs ${compareOption}`,
+    compare: `vs ${compareOption} · ${comparisonRangeLabel}`,
   };
-  const comparisonRangeLabel = `${comparisonDateRange.start} ~ ${comparisonDateRange.end}`;
   const hasImportedRows = Object.values(importedRows).some((rows) => rows.length > 0);
   // Never manufacture period values by scaling a sample week. Every displayed
   // value must come from rows that actually belong to the selected period.
@@ -1011,8 +1029,10 @@ export default function Home() {
         const savedHospitalName = saved.hospitalName || "메디인사이트";
         const savedHospitalLocation = saved.hospitalLocation || "서울 본원";
         const savedLocale = saved.locale || "한국어";
-        const savedPeriod = saved.defaultPeriod || "최근 7일";
-        const savedCompare = compareOptions.includes(saved.compare as CompareOption) ? saved.compare as CompareOption : "직전 동일 기간";
+        const savedPeriod = periodOptionDefinitions.some((option) => option.label === saved.defaultPeriod)
+          ? saved.defaultPeriod as PeriodOption
+          : defaultPeriodOption;
+        const savedCompare = compareOptions.includes(saved.compare as CompareOption) ? saved.compare as CompareOption : "전일 기간";
         const savedNotifications = saved.notifications || { errors: true, summary: true, changes: false };
         const savedTargets = Array.isArray(saved.kpiTargets) && saved.kpiTargets.length > 0 ? saved.kpiTargets : initialKpiTargets;
         const savedAiSettings = saved.aiSettings || { enabled: true, frequency: "매일 오전 9시", compare: "전주 동일기간", anomaly: "10% 이상", recommendation: "핵심 3개" };
@@ -3200,7 +3220,7 @@ export default function Home() {
             right={
               <div className="panel-actions">
                 <button className={`pill ${consultTrendMode === "weekly" ? "active" : ""}`} type="button" onClick={() => setConsultTrendMode("weekly")}>
-                  최근 7일
+                  최근7일(오늘제외)
                 </button>
                 <button className={`pill ${consultTrendMode === "monthly" ? "active" : ""}`} type="button" onClick={() => setConsultTrendMode("monthly")}>
                   월간
@@ -4688,7 +4708,7 @@ export default function Home() {
                   max={activeMenu === "ga4" && !isCustomPeriod ? activeDateRange.end : customEndDate}
                   onChange={(event) => {
                     setCustomStartDate(event.target.value);
-                    setPeriod(periodOptions[5].label);
+                    setPeriod("직접입력");
                   }}
                   aria-label="조회 시작일"
                 />
@@ -4699,7 +4719,7 @@ export default function Home() {
                   min={activeMenu === "ga4" && !isCustomPeriod ? activeDateRange.start : customStartDate}
                   onChange={(event) => {
                     setCustomEndDate(event.target.value);
-                    setPeriod(periodOptions[5].label);
+                    setPeriod("직접입력");
                   }}
                   aria-label="조회 종료일"
                 />

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const pagePath = new URL("../app/page.tsx", import.meta.url);
+const pagePath = new URL("../app/dashboard-client.tsx", import.meta.url);
 const rankPath = new URL("../app/api/place-rank/route.ts", import.meta.url);
 const insightsPath = new URL("../app/api/rankfree-insights/route.ts", import.meta.url);
 
