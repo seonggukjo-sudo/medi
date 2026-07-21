@@ -4542,7 +4542,7 @@ export default function Home() {
         {isAuthenticated ? (
           <a className="pill subtle" href="/signout-with-chatgpt?return_to=/">로그아웃</a>
         ) : (
-          <a className="primary-button" href="/signin-with-chatgpt?return_to=/">ChatGPT로 로그인</a>
+          <a className="primary-button" href="/cdn-cgi/access/login">이메일로 로그인</a>
         )}
       </div>
       <div className="account-detail-grid">
@@ -4577,7 +4577,7 @@ export default function Home() {
           <p>{isCheckingAccess ? "로그인 계정과 병원 권한을 확인한 뒤 필요한 데이터만 불러옵니다." : isForbidden ? "병원 최고관리자에게 현재 ChatGPT 계정을 사용자·권한 목록에 등록해 달라고 요청해 주세요." : isUnavailable ? "일시적인 서버 또는 저장소 오류입니다. 재로그인하지 않고 잠시 후 다시 시도할 수 있습니다." : "병원 CRM과 광고 데이터는 비공개 정보이므로 ChatGPT 로그인과 병원 접근 권한 확인 후에만 표시됩니다."}</p>
           {!isCheckingAccess ? isUnavailable
             ? <button className="primary-button auth-gate-action" type="button" onClick={() => { setAuthState("checking"); setAuthMessage("로그인과 병원 접근 권한을 다시 확인하고 있습니다."); setAuthRetryKey((value) => value + 1); }}>연결 다시 확인</button>
-            : <a className="primary-button auth-gate-action" href="/signin-with-chatgpt?return_to=/">{isForbidden ? "다른 계정으로 로그인" : "ChatGPT로 로그인"}</a>
+            : <a className="primary-button auth-gate-action" href="/cdn-cgi/access/login">{isForbidden ? "다른 계정으로 로그인" : "이메일로 로그인"}</a>
           : <div className="auth-gate-loader"><span /><span /><span /></div>}
           {!isCheckingAccess && authMessage ? <small>{authMessage}</small> : null}
           <div className="auth-gate-policy">
@@ -4754,7 +4754,7 @@ export default function Home() {
               {isAuthenticated ? (
                 <a className="primary-button" href="/signout-with-chatgpt?return_to=/">로그아웃</a>
               ) : (
-                <a className="primary-button" href="/signin-with-chatgpt?return_to=/">ChatGPT로 로그인</a>
+                <a className="primary-button" href="/cdn-cgi/access/login">이메일로 로그인</a>
               )}
               <button className="pill" type="button" onClick={() => setAccountOpen(false)}>닫기</button>
             </div>

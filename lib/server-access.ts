@@ -19,7 +19,10 @@ export class AccessError extends Error {
 const accessHeartbeatIntervalMs = 15 * 60 * 1000;
 
 function requestEmail(request: Request) {
-  const email = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
+  const email = (
+    request.headers.get("oai-authenticated-user-email")
+    ?? request.headers.get("cf-access-authenticated-user-email")
+  )?.trim().toLowerCase();
   if (email) return email;
 
   const hostname = new URL(request.url).hostname;
