@@ -102,7 +102,6 @@ export async function POST(request: Request) {
       throw new Error("구글 시트 데이터를 읽지 못했습니다.");
     }
     const sheetBody = await sheetResponse.json() as { valueRanges?: Array<{ values?: unknown[][] }> };
-    const authEmail = request.headers.get("oai-authenticated-user-email") || "";
     const results = [];
     for (let index = 0; index < sheetTabs.length; index += 1) {
       const tab = sheetTabs[index];
@@ -115,9 +114,22 @@ export async function POST(request: Request) {
       formData.set("tableKey", tab.tableKey);
       formData.set("hospitalId", hospitalId);
       formData.set("file", new File([rowsToCsv(rows)], tab.fileName, { type: "text/csv;charset=utf-8" }));
+      // Preserve the authenticated identity when the worker calls its own upload route.
+      // Cloudflare Access uses its own header, while Sites uses the oai header.
+      const forwardedHeaders = new Headers();
+      for (const headerName of [
+        "oai-authenticated-user-email",
+        "oai-authenticated-user-full-name",
+        "oai-authenticated-user-full-name-encoding",
+        "cf-access-authenticated-user-email",
+        "cf-access-jwt-assertion",
+      ]) {
+        const value = request.headers.get(headerName);
+        if (value) forwardedHeaders.set(headerName, value);
+      }
       const uploadResponse = await fetch(new URL("/api/uploads", request.url), {
         method: "POST",
-        headers: authEmail ? { "oai-authenticated-user-email": authEmail } : undefined,
+        headers: forwardedHeaders,
         body: formData,
       });
       const uploadBody = await uploadResponse.json() as { error?: string; savedRows?: number; status?: string };

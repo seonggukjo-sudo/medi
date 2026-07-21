@@ -11,6 +11,49 @@ type CompareOption = "전일 기간" | "전주 동일 기간" | "전월 동일 �
 
 const defaultPeriodOption: PeriodOption = "최근7일(오늘제외)";
 
+async function fetchJsonWithRetry<T>(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  retries = 2,
+): Promise<{ response: Response; body: T }> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const response = await fetch(input, init);
+      const body = await response.json() as T;
+      if (response.ok || response.status === 401 || response.status === 403 || attempt === retries) {
+        return { response, body };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    } catch (error) {
+      lastError = error;
+      if (attempt === retries) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("요청을 완료하지 못했습니다.");
+}
+
+type SettingsApiResponse = {
+  error?: string;
+  settings?: Record<string, any>;
+  users?: UserAccessRow[];
+  history?: SettingsHistoryRow[];
+  access: {
+    email: string;
+    role: string;
+    roleLabel: string;
+    canManageSettings: boolean;
+    canManageData: boolean;
+  };
+};
+
+type DashboardDataApiResponse = {
+  error?: string;
+  connected: boolean;
+  rows: ImportedDashboardRows;
+};
+
 type Tone = "green" | "violet" | "orange" | "blue";
 
 type MetricCard = {
@@ -1003,8 +1046,7 @@ export default function Home() {
   useEffect(() => {
     const controller = new AbortController();
     Promise.allSettled([
-      fetch("/api/settings", { cache: "no-store", signal: controller.signal }).then(async (response) => {
-        const body = await response.json();
+      fetchJsonWithRetry<SettingsApiResponse>("/api/settings", { cache: "no-store", signal: controller.signal }).then(({ response, body }) => {
         if (!response.ok) {
           const error = new Error(body.error || "설정을 불러오지 못했습니다.") as Error & { status?: number };
           error.status = response.status;
@@ -1012,8 +1054,7 @@ export default function Home() {
         }
         return body;
       }),
-      fetch("/api/dashboard-data", { cache: "no-store", signal: controller.signal }).then(async (response) => {
-        const body = await response.json();
+      fetchJsonWithRetry<DashboardDataApiResponse>("/api/dashboard-data", { cache: "no-store", signal: controller.signal }).then(({ response, body }) => {
         if (!response.ok) {
           const error = new Error(body.error || "운영 데이터를 불러오지 못했습니다.") as Error & { status?: number };
           error.status = response.status;
