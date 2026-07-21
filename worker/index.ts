@@ -46,3 +46,6 @@ const worker = {
 };
 
 export default worker;
+
+// Keep the Worker entrypoint unchanged; this comment intentionally triggers a
+// fresh Cloudflare build after the R2 binding was enabled.
