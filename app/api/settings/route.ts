@@ -17,6 +17,12 @@ const defaultSettings = {
   notifications: { errors: true, summary: true, changes: false },
   kpiTargets: [],
   aiSettings: { enabled: true, frequency: "매일 오전 9시", compare: "전주 동일기간", anomaly: "10% 이상", recommendation: "핵심 3개" },
+  dataPolicy: {
+    departmentCategories: "교통사고, 재활, 성장, 다이어트, 암, 기타",
+    inflowChannels: "네이버 플레이스, 네이버 검색광고, 네이버 블로그, 구글 검색, 인스타그램, 카카오, 지인 소개, 기존 환자, 간판·현수막, 모름, 기타",
+    duplicateRule: "일자 + 원천 ID",
+    mismatchPolicy: "합계 불일치 시 AI 분석 보류",
+  },
   ga4Automation: true,
   googleSheetId: "",
   googleSheetAutomation: false,

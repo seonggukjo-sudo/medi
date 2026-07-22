@@ -13,7 +13,9 @@ function stringToBase64Url(value: string) {
 }
 
 function pemToPkcs8(pem: string) {
-  const binary = atob(pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, ""));
+  // Accept both multi-line PEM secrets and JSON-style escaped line breaks.
+  const normalizedPem = pem.replaceAll("\\n", "\n").trim();
+  const binary = atob(normalizedPem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, ""));
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return bytes.buffer;

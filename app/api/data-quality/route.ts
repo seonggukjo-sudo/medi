@@ -53,8 +53,25 @@ export async function GET(request: Request) {
       WHERE b.hospital_id = ?
       ORDER BY b.uploaded_at DESC
       LIMIT 20`).bind(hospitalId).all(),
-      env.DB.prepare("SELECT (SELECT COUNT(*) FROM appointments a LEFT JOIN leads l ON l.hospital_id = a.hospital_id AND l.lead_id = a.lead_id WHERE a.hospital_id = ? AND a.lead_id <> '' AND l.lead_id IS NULL) + (SELECT COUNT(*) FROM visits v LEFT JOIN appointments a ON a.hospital_id = v.hospital_id AND a.appointment_id = v.appointment_id WHERE v.hospital_id = ? AND v.appointment_id <> '' AND a.appointment_id IS NULL) AS count").bind(hospitalId, hospitalId).first<CountRow>(),
-      env.DB.prepare("SELECT COALESCE(SUM(warning_count), 0) AS count FROM upload_batches WHERE hospital_id = ?").bind(hospitalId).first<CountRow>(),
+      env.DB.prepare(`SELECT
+        (SELECT COUNT(*) FROM appointments a LEFT JOIN leads l ON l.hospital_id = a.hospital_id AND l.lead_id = a.lead_id
+          WHERE a.hospital_id = ? AND a.booked_at BETWEEN ? AND ? AND a.lead_id <> '' AND l.lead_id IS NULL)
+        + (SELECT COUNT(*) FROM visits v LEFT JOIN appointments a ON a.hospital_id = v.hospital_id AND a.appointment_id = v.appointment_id
+          WHERE v.hospital_id = ? AND v.visited_at BETWEEN ? AND ? AND v.appointment_id <> '' AND a.appointment_id IS NULL)
+        + (SELECT COUNT(*) FROM payments p LEFT JOIN visits v ON v.hospital_id = p.hospital_id AND v.visit_id = p.visit_id
+          WHERE p.hospital_id = ? AND p.paid_at BETWEEN ? AND ? AND p.visit_id <> '' AND v.visit_id IS NULL) AS count`)
+        .bind(hospitalId, start, `${end} 23:59:59`, hospitalId, start, `${end} 23:59:59`, hospitalId, start, `${end} 23:59:59`).first<CountRow>(),
+      env.DB.prepare(`SELECT COALESCE(SUM(b.warning_count), 0) AS count
+        FROM upload_batches b
+        WHERE b.hospital_id = ? AND EXISTS (
+          SELECT 1 FROM uploaded_files f WHERE f.batch_id = b.batch_id AND (
+            (f.table_key = 'leads' AND EXISTS (SELECT 1 FROM leads x WHERE x.batch_id = b.batch_id AND x.received_at BETWEEN ? AND ?)) OR
+            (f.table_key = 'appointments' AND EXISTS (SELECT 1 FROM appointments x WHERE x.batch_id = b.batch_id AND x.booked_at BETWEEN ? AND ?)) OR
+            (f.table_key = 'visits' AND EXISTS (SELECT 1 FROM visits x WHERE x.batch_id = b.batch_id AND x.visited_at BETWEEN ? AND ?)) OR
+            (f.table_key = 'payments' AND EXISTS (SELECT 1 FROM payments x WHERE x.batch_id = b.batch_id AND x.paid_at BETWEEN ? AND ?)) OR
+            (f.table_key = 'ad_spend' AND EXISTS (SELECT 1 FROM ad_spend x WHERE x.batch_id = b.batch_id AND x.spend_date BETWEEN ? AND ?))
+          )
+        )`).bind(hospitalId, start, `${end} 23:59:59`, start, `${end} 23:59:59`, start, `${end} 23:59:59`, start, `${end} 23:59:59`, start, end).first<CountRow>(),
       loadDailyMetricOverrides(env.DB, hospitalId, start, end),
       loadDailyMetricOverrideHistory(env.DB, hospitalId, start, end),
     ]);
@@ -75,17 +92,42 @@ export async function GET(request: Request) {
     grouped.forEach((result, index) => result.results.forEach((row) => put(String(row.date), dateQueries[index][3], Number(row.value))));
     moneyGrouped[0].results.forEach((row) => put(String(row.date), "sales", Number(row.value)));
     moneyGrouped[1].results.forEach((row) => put(String(row.date), "adSpend", Number(row.value)));
+    const sourceDaily = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
     overrides.forEach((row) => dailyMap.set(row.date, { date: row.date, inquiries: row.inquiries, reservations: row.reservations, visits: row.visits, sales: row.sales, adSpend: row.adSpend }));
     const daily = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
 
     const detailTotals = daily.reduce((sum, row) => ({ inquiries: sum.inquiries + row.inquiries, reservations: sum.reservations + row.reservations, visits: sum.visits + row.visits, sales: sum.sales + row.sales, adSpend: sum.adSpend + row.adSpend }), { inquiries: 0, reservations: 0, visits: 0, sales: 0, adSpend: 0 });
+    const sourceDetailTotals = sourceDaily.reduce((sum, row) => ({ inquiries: sum.inquiries + row.inquiries, reservations: sum.reservations + row.reservations, visits: sum.visits + row.visits, sales: sum.sales + row.sales, adSpend: sum.adSpend + row.adSpend }), { inquiries: 0, reservations: 0, visits: 0, sales: 0, adSpend: 0 });
     const sourceTotals = { inquiries: lead.count, reservations: appointment.count, visits: visit.count, sales: payment.amount, adSpend: spend.amount };
     const totals = overrides.length > 0 ? detailTotals : sourceTotals;
-    const reconciliation = Object.entries(totals).map(([metric, total]) => ({ metric, total, detailTotal: detailTotals[metric as keyof typeof detailTotals], passed: total === detailTotals[metric as keyof typeof detailTotals] }));
+    const adjustments = Object.fromEntries(Object.keys(sourceTotals).map((metric) => [metric, totals[metric as keyof typeof totals] - sourceTotals[metric as keyof typeof sourceTotals]]));
+    const reconciliation = Object.entries(sourceTotals).map(([metric, total]) => ({
+      metric,
+      total,
+      detailTotal: sourceDetailTotals[metric as keyof typeof sourceDetailTotals],
+      finalTotal: totals[metric as keyof typeof totals],
+      adjustment: adjustments[metric],
+      passed: total === sourceDetailTotals[metric as keyof typeof sourceDetailTotals],
+    }));
     const uploadRows = uploads.results as Array<{ status: string; rowCount: number; errorCount: number; warningCount: number }>;
     const uploadSummary = { total: uploadRows.length, validated: uploadRows.filter((row) => row.status === "validated").length, review: uploadRows.filter((row) => row.status === "needs_review").length, errors: uploadRows.reduce((sum, row) => sum + Number(row.errorCount), 0) };
 
-    return Response.json({ range: { start, end }, connected: Object.values(totals).some((value) => value > 0), totals, sourceTotals, daily, overrides, overrideHistory, uploads: uploads.results, uploadSummary, warnings: { missingLinks: Number(missingLinks?.count ?? 0), duplicates: Number(duplicateWarnings?.count ?? 0) }, reconciliation });
+    return Response.json({
+      range: { start, end },
+      checkedAt: new Date().toISOString(),
+      connected: Object.values(totals).some((value) => value > 0),
+      totals,
+      sourceTotals,
+      adjustments,
+      sourceDaily,
+      daily,
+      overrides,
+      overrideHistory,
+      uploads: uploads.results,
+      uploadSummary,
+      warnings: { missingLinks: Number(missingLinks?.count ?? 0), duplicates: Number(duplicateWarnings?.count ?? 0) },
+      reconciliation,
+    });
   } catch (error) {
     return accessErrorResponse(error, "데이터 품질을 검사하지 못했습니다.");
   }

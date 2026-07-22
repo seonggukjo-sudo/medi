@@ -340,7 +340,7 @@ const pageMeta: Record<
   },
   settings: {
     title: "설정",
-    subtitle: "병원 정보, 표시 기준, 알림, 권한을 관리합니다.",
+    subtitle: "운영 기준, 사용자 권한, KPI 목표와 외부 데이터 연동을 관리합니다.",
     primaryAction: "",
   },
   mypage: {
@@ -380,6 +380,20 @@ type KpiTargetRow = {
   channel: string;
 };
 
+type DataPolicySettings = {
+  departmentCategories: string;
+  inflowChannels: string;
+  duplicateRule: string;
+  mismatchPolicy: string;
+};
+
+const defaultDataPolicy: DataPolicySettings = {
+  departmentCategories: "교통사고, 재활, 성장, 다이어트, 암, 기타",
+  inflowChannels: "네이버 플레이스, 네이버 검색광고, 네이버 블로그, 구글 검색, 인스타그램, 카카오, 지인 소개, 기존 환자, 간판·현수막, 모름, 기타",
+  duplicateRule: "일자 + 원천 ID",
+  mismatchPolicy: "합계 불일치 시 AI 분석 보류",
+};
+
 type SettingsSnapshot = {
   hospitalName: string;
   hospitalLocation: string;
@@ -390,6 +404,7 @@ type SettingsSnapshot = {
   users: UserAccessRow[];
   kpiTargets: KpiTargetRow[];
   aiSettings: { enabled: boolean; frequency: string; compare: string; anomaly: string; recommendation: string };
+  dataPolicy: DataPolicySettings;
   ga4Automation: boolean;
   googleSheetId: string;
   googleSheetAutomation: boolean;
@@ -410,14 +425,18 @@ const initialUsers: UserAccessRow[] = [
 
 type DataQuality = {
   connected: boolean;
+  checkedAt?: string;
   totals: { inquiries: number; reservations: number; visits: number; sales: number; adSpend: number };
+  sourceTotals?: { inquiries: number; reservations: number; visits: number; sales: number; adSpend: number };
+  adjustments?: { inquiries: number; reservations: number; visits: number; sales: number; adSpend: number };
+  sourceDaily?: DailyDataRow[];
   daily: DailyDataRow[];
   overrides?: Array<DailyDataRow & { updatedAt?: string; updatedBy?: string }>;
   overrideHistory?: Array<DailyDataRow & { updatedAt?: string; updatedBy?: string; reason?: string }>;
   uploadSummary: { total: number; validated: number; review: number; errors: number };
   warnings: { missingLinks: number; duplicates: number };
   uploads: Array<{ batchId: string; uploadedAt: string; uploadedBy?: string; status: string; rowCount: number; errorCount: number; warningCount: number; fileName?: string; tableKey?: ImportTableKey; periodStart?: string; periodEnd?: string }>;
-  reconciliation: Array<{ metric: string; total: number; detailTotal: number; passed: boolean }>;
+  reconciliation: Array<{ metric: string; total: number; detailTotal: number; finalTotal?: number; adjustment?: number; passed: boolean }>;
 };
 
 function applyDailyOverrides(result: ImportedKpiResult, quality: DataQuality | null) {
@@ -925,6 +944,7 @@ export default function Home() {
     anomaly: "10% 이상",
     recommendation: "핵심 3개",
   });
+  const [dataPolicy, setDataPolicy] = useState<DataPolicySettings>(defaultDataPolicy);
   const [ga4Automation, setGa4Automation] = useState(true);
   const [googleSheetId, setGoogleSheetId] = useState("");
   const [googleSheetAutomation, setGoogleSheetAutomation] = useState(false);
@@ -1077,6 +1097,7 @@ export default function Home() {
         const savedNotifications = saved.notifications || { errors: true, summary: true, changes: false };
         const savedTargets = Array.isArray(saved.kpiTargets) && saved.kpiTargets.length > 0 ? saved.kpiTargets : initialKpiTargets;
         const savedAiSettings = saved.aiSettings || { enabled: true, frequency: "매일 오전 9시", compare: "전주 동일기간", anomaly: "10% 이상", recommendation: "핵심 3개" };
+        const savedDataPolicy = { ...defaultDataPolicy, ...(saved.dataPolicy || {}) };
         const savedGa4Automation = typeof saved.ga4Automation === "boolean" ? saved.ga4Automation : true;
         const savedGoogleSheetId = String(saved.googleSheetId || "");
         const savedGoogleSheetAutomation = typeof saved.googleSheetAutomation === "boolean" ? saved.googleSheetAutomation : false;
@@ -1090,6 +1111,7 @@ export default function Home() {
         setNotifications(savedNotifications);
         setKpiTargets(savedTargets);
         setAiSettings(savedAiSettings);
+        setDataPolicy(savedDataPolicy);
         setGa4Automation(savedGa4Automation);
         setGoogleSheetId(savedGoogleSheetId);
         setGoogleSheetAutomation(savedGoogleSheetAutomation);
@@ -1104,6 +1126,7 @@ export default function Home() {
           users: savedUsers.map((user: UserAccessRow) => ({ ...user })),
           kpiTargets: savedTargets.map((target: KpiTargetRow) => ({ ...target })),
           aiSettings: { ...savedAiSettings },
+          dataPolicy: { ...savedDataPolicy },
           ga4Automation: savedGa4Automation,
           googleSheetId: savedGoogleSheetId,
           googleSheetAutomation: savedGoogleSheetAutomation,
@@ -1550,6 +1573,7 @@ export default function Home() {
     users: users.map((user) => ({ ...user })),
     kpiTargets: kpiTargets.map((target) => ({ ...target })),
     aiSettings: { ...aiSettings },
+    dataPolicy: { ...dataPolicy },
     ga4Automation,
     googleSheetId,
     googleSheetAutomation,
@@ -1567,6 +1591,7 @@ export default function Home() {
     setUsers(saved.users.map((user) => ({ ...user })));
     setKpiTargets(saved.kpiTargets.map((target) => ({ ...target })));
     setAiSettings({ ...saved.aiSettings });
+    setDataPolicy({ ...saved.dataPolicy });
     setGa4Automation(saved.ga4Automation);
     setGoogleSheetId(saved.googleSheetId);
     setGoogleSheetAutomation(saved.googleSheetAutomation);
@@ -1587,7 +1612,7 @@ export default function Home() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          settings: { hospitalName, hospitalLocation, locale: settingsLocale, defaultPeriod: settingsPeriod, compare: settingsCompare, notifications, kpiTargets, aiSettings, ga4Automation, googleSheetId, googleSheetAutomation },
+          settings: { hospitalName, hospitalLocation, locale: settingsLocale, defaultPeriod: settingsPeriod, compare: settingsCompare, notifications, kpiTargets, aiSettings, dataPolicy, ga4Automation, googleSheetId, googleSheetAutomation },
           users,
         }),
       });
@@ -2039,7 +2064,9 @@ export default function Home() {
     const detailMismatch = actualKpiResult.departments.reduce((sum, row) => sum + row.inquiries, 0) !== summary.inquiry
       || actualKpiResult.departments.reduce((sum, row) => sum + row.reservations, 0) !== summary.reservation
       || actualKpiResult.departments.reduce((sum, row) => sum + row.newVisits, 0) !== summary.newVisit;
-    if (detailMismatch) return [{ title: "합계 검증 필요", detail: `${periodDefinition.range}의 기간 합계와 진료과목 합계가 일치하지 않아 원인 분석과 실행 제안을 보류합니다.` }];
+    if (detailMismatch && dataPolicy.mismatchPolicy !== "경고 표시 후 분석 유지") {
+      return [{ title: "합계 검증 필요", detail: `${periodDefinition.range}의 기간 합계와 진료과목 합계가 일치하지 않아 설정된 품질 정책에 따라 원인 분석과 실행 제안을 보류합니다.` }];
+    }
     const channelEfficiency = channels
       .filter((row) => row.spend > 0 && row.sales > 0)
       .map((row) => ({ ...row, roas: Math.round((row.sales / row.spend) * 100), conversionCost: row.conversions > 0 ? Math.round(row.spend / row.conversions) : null }));
@@ -2071,7 +2098,7 @@ export default function Home() {
         detail: `노쇼율 ${noShowRate}%와 비예약 내원율 ${walkInRate}%를 별도 KPI로 관리합니다. 예약자는 전일·당일 확인을 적용하고, 비예약 내원자는 유입경로와 상담 가능 시간을 기록해 예약 전환 개선에 활용합니다.`,
       },
     ];
-  }, [actualKpiResult, compareOption, kpiTargets, mergedAdSourceRows, periodDefinition.range]);
+  }, [actualKpiResult, compareOption, dataPolicy.mismatchPolicy, kpiTargets, mergedAdSourceRows, periodDefinition.range]);
 
   const activeAdChannelShare = useMemo(() => {
     if (!mergedAdSourceRows.length) return [];
@@ -2300,6 +2327,10 @@ export default function Home() {
     : [];
   const reconciliationRows = [...(dataQuality?.reconciliation ?? []), ...dimensionReconciliation];
   const reconciliationWarning = reconciliationRows.some((row) => !row.passed);
+  const configuredDepartmentLabels = new Set(dataPolicy.departmentCategories.split(",").map((item) => item.trim()).filter(Boolean));
+  const configuredInflowLabels = new Set(dataPolicy.inflowChannels.split(",").map((item) => item.trim()).filter(Boolean));
+  const unmatchedDepartmentLabels = (actualKpiResult?.departments ?? []).map((row) => row.department).filter((label) => !configuredDepartmentLabels.has(label));
+  const unmatchedInflowLabels = (actualKpiResult?.referrals ?? []).map((row) => row.referral).filter((label) => !configuredInflowLabels.has(label));
 
   const selectedKpiDetail = useMemo(() => {
     if (!selectedKpiLabel) return null;
@@ -2814,6 +2845,21 @@ export default function Home() {
     duplicates: dataQuality?.warnings.duplicates ?? 0,
     mismatches: reconciliationRows.filter((row) => !row.passed).length,
   };
+  const sourceDailyByDate = new Map((dataQuality?.sourceDaily ?? []).map((row) => [row.date, row]));
+  const adjustedDayCount = dataQuality?.overrides?.length ?? 0;
+  const unresolvedIssueCount = dataTrustSummary.missingLinks + dataTrustSummary.duplicates + dataTrustSummary.mismatches + (dataQuality?.uploadSummary.errors ?? 0);
+  const dataCheckedAt = dataQuality?.checkedAt
+    ? new Date(dataQuality.checkedAt).toLocaleString("ko-KR")
+    : dataRefreshAt || "검사 기록 없음";
+  const dataSourceRows = importedDataCounts.map((item) => {
+    const latest = dataQuality?.uploads.find((row) => row.tableKey === (item.key === "adSpend" ? "ad_spend" : item.key));
+    return {
+      ...item,
+      state: item.count > 0 ? "정상" : "미연동",
+      period: latest?.periodStart ? `${latest.periodStart}${latest.periodEnd && latest.periodEnd !== latest.periodStart ? ` ~ ${latest.periodEnd}` : ""}` : "적용 기록 없음",
+      updated: latest?.uploadedAt ? new Date(latest.uploadedAt).toLocaleString("ko-KR") : "성공 기록 없음",
+    };
+  });
 
   const renderKpi = () => (
     <>
@@ -4151,38 +4197,43 @@ export default function Home() {
 
   const renderData = () => (
     <>
-      <section className="panel kpi-panel">
-        <div className="section-title">데이터 관리 <span className={`source-badge ${dataSourceState}`}>{dataSourceState === "live" ? "D1 실데이터" : dataSourceState === "loading" ? "연결 확인 중" : "데이터 미연동"}</span></div>
+      <section className="panel kpi-panel data-control-hero" id="data-health">
+        <div className="section-title">데이터 관제 <span className={`source-badge ${dataSourceState}`}>{dataSourceState === "live" ? "실데이터 운영 중" : dataSourceState === "loading" ? "연결 확인 중" : "데이터 미연동"}</span></div>
+        <p className="section-helper">선택 기간 {activeDateRange.start} ~ {activeDateRange.end} · 최종 검사 {dataCheckedAt}</p>
         <div className="kpi-grid data-kpi-grid">
-          <MetricCardView card={{ label: "전체 업로드", value: `${dataQuality?.uploadSummary.total ?? 0}건`, delta: "실제 이력", previous: "D1 업로드 배치", icon: "", tone: "green" }} />
-          <MetricCardView card={{ label: "정상 반영", value: `${dataQuality?.uploadSummary.validated ?? 0}건`, delta: "검수 완료", previous: "오류 없는 업로드", icon: "", tone: "blue" }} />
-          <MetricCardView card={{ label: "검수 대기", value: `${dataQuality?.uploadSummary.review ?? 0}건`, delta: "확인 필요", previous: "오류 또는 경고 포함", icon: "", tone: "orange" }} />
-          <MetricCardView card={{ label: "오류 행", value: `${dataQuality?.uploadSummary.errors ?? 0}건`, delta: "수정 필요", previous: "업로드 검수 결과", icon: "", tone: "violet" }} />
+          <MetricCardView card={{ label: "연결 원천", value: `${dataTrustSummary.connectedSources}/${dataTrustSummary.totalSources}`, delta: dataTrustSummary.connectedSources === dataTrustSummary.totalSources ? "정상" : "부분 연동", previous: "문의·예약·내원·결제·광고비", icon: "", tone: "green" }} />
+          <MetricCardView card={{ label: "미처리 품질 이슈", value: `${unresolvedIssueCount}건`, delta: unresolvedIssueCount ? "확인 필요" : "검증 통과", previous: "누락·중복·오류·대사", icon: "", tone: "orange" }} />
+          <MetricCardView card={{ label: "수동 보정", value: `${adjustedDayCount}일`, delta: adjustedDayCount ? "최종값에 적용" : "보정 없음", previous: "원천값과 별도 보관", icon: "", tone: "blue" }} />
+          <MetricCardView card={{ label: "정상 업로드", value: `${dataQuality?.uploadSummary.validated ?? 0}건`, delta: `${dataQuality?.uploadSummary.review ?? 0}건 검수 대기`, previous: "최근 업로드 이력", icon: "", tone: "violet" }} />
         </div>
       </section>
 
+      <nav className="data-section-nav" aria-label="데이터 관리 영역 바로가기">
+        <a href="#data-health">상태</a><a href="#data-sources">원천·업로드</a><a href="#daily-data-table">일자별 조회</a><a href="#data-reconciliation">검증·대사</a><a href="#data-history">변경 이력</a>
+      </nav>
+
       <section className="panel data-trust-panel">
-        <ChartHeader title="데이터 신뢰도 요약" right={<span className={`reconcile-status ${dataTrustSummary.missingLinks + dataTrustSummary.duplicates + dataTrustSummary.mismatches === 0 ? "pass" : "fail"}`}>{dataTrustSummary.missingLinks + dataTrustSummary.duplicates + dataTrustSummary.mismatches === 0 ? "검증 통과" : "확인 필요"}</span>} />
+        <ChartHeader title="데이터 신뢰도 요약 · 선택 기간" right={<span className={`reconcile-status ${unresolvedIssueCount === 0 ? "pass" : "fail"}`}>{unresolvedIssueCount === 0 ? "검증 통과" : "확인 필요"}</span>} />
         <div className="data-trust-grid">
           <article><span>연결 원천</span><strong>{dataTrustSummary.connectedSources}/{dataTrustSummary.totalSources}</strong><small>문의·예약·내원·결제·광고비</small></article>
           <article className={dataTrustSummary.missingLinks ? "trust-warning" : "trust-good"}><span>연결 누락</span><strong>{dataTrustSummary.missingLinks.toLocaleString("ko-KR")}건</strong><small>문의→예약→내원 관계</small></article>
-          <article className={dataTrustSummary.duplicates ? "trust-warning" : "trust-good"}><span>중복 행</span><strong>{dataTrustSummary.duplicates.toLocaleString("ko-KR")}건</strong><small>원천 식별키 기준</small></article>
+          <article className={dataTrustSummary.duplicates ? "trust-warning" : "trust-good"}><span>중복 후보</span><strong>{dataTrustSummary.duplicates.toLocaleString("ko-KR")}건</strong><small>선택 기간 업로드 식별키</small></article>
           <article className={dataTrustSummary.mismatches ? "trust-warning" : "trust-good"}><span>합계 불일치</span><strong>{dataTrustSummary.mismatches.toLocaleString("ko-KR")}개</strong><small>기간 합계 = 세부 합계</small></article>
         </div>
       </section>
 
-      <section className="chart-grid data-grid">
+      <section className="chart-grid data-grid" id="data-sources">
         <article className="panel table-panel">
           <ChartHeader title="업로드 메뉴" />
           <div className="upload-zone">
             <div className="upload-zone-inner">
               <span className="upload-badge">드래그 & 드롭</span>
               <strong>상담, 내원, 광고비 파일을 여기에 올려주세요.</strong>
-              <p>CSV, XLSX, XLS 형식을 지원합니다. 업로드 후 자동 검수와 컬럼 매핑을 진행합니다.</p>
-              <p className="upload-api-note">업로드 원본은 R2에, 검수 결과와 운영 데이터는 D1에 영구 저장됩니다. 예시 행은 삭제한 뒤 업로드해 주세요.</p>
+              <p>CSV 형식을 지원합니다. 업로드 후 필수값, 형식과 중복 후보를 자동 검사합니다.</p>
+              <p className="upload-api-note">서버 저장 API 준비 완료 · `/api/uploads`를 통해 원본 CSV는 R2 UPLOADS에, 검수 결과와 운영 데이터는 D1 DB에 영구 저장됩니다.</p>
             </div>
             <div className="upload-actions">
-              <input ref={fileInputRef} className="visually-hidden" type="file" accept=".csv,.xlsx,.xls" onChange={handleUploadFile} />
+              <input ref={fileInputRef} className="visually-hidden" type="file" accept=".csv,text/csv" onChange={handleUploadFile} />
               <button className="primary-button" type="button" disabled={!canManageData} onClick={() => fileInputRef.current?.click()}>
                 파일 선택
               </button>
@@ -4234,54 +4285,32 @@ export default function Home() {
         </article>
       </section>
 
-      <section className="summary-grid data-summary-grid">
-        <article className="panel summary-cards-panel">
-          <ChartHeader title="연동 상태" />
-          <div className="integration-status-list">
-            {importedDataCounts.map(({ label, count }) => {
-              const status = count > 0 ? "실데이터" : "미연동";
-              return (
-              <div className="integration-status-row" key={label}>
-                <span><i className={`status-dot ${count > 0 ? "good" : "wait"}`} />{label}</span>
-                <strong>{status}</strong>
-                <small>{count.toLocaleString("ko-KR")}행</small>
-              </div>
-            )})}
-          </div>
-        </article>
-
-        <article className="panel table-panel">
-          <ChartHeader title="누락 · 중복 자동 검사" />
-          <ul className="checklist">
-            <li>연결되지 않은 문의·예약·내원 관계: <b>{dataQuality?.warnings.missingLinks ?? 0}건</b></li>
-            <li>업로드 중복 경고: <b>{dataQuality?.warnings.duplicates ?? 0}건</b></li>
-            <li>오류가 있는 파일은 운영 집계에 반영하지 않습니다.</li>
-            <li>예시 데이터는 템플릿 안내용이며 실데이터 집계에 포함하지 않습니다.</li>
-          </ul>
-        </article>
-      </section>
-
-      <section className="panel table-panel reconciliation-panel">
-        <ChartHeader title="수치 대사표 · 기간 합계 = 세부 합계" />
-        <p className="table-helper">선택 기간 {activeDateRange.start} ~ {activeDateRange.end}의 원천 합계와 일자별 상세 합계를 자동 비교합니다.</p>
+      <section className="panel table-panel data-source-ledger">
+        <ChartHeader title="원천별 반영 상태" right={<span className="chart-period-note">{activeDateRange.start} ~ {activeDateRange.end}</span>} />
+        <p className="table-helper">세부 연결 설정은 설정 메뉴에서 관리하고, 여기서는 실제 반영 행·적용 기간·최근 성공 기록만 확인합니다.</p>
         <div className="data-table">
-          <div className="table-head reconciliation-head"><span>지표</span><span>기간 합계</span><span>세부 합계</span><span>검증</span></div>
-          {reconciliationRows.map((row) => <div className="table-row reconciliation-row" key={row.metric}><b>{{ inquiries: "문의", reservations: "예약", visits: "내원", sales: "매출", adSpend: "광고비", departmentInquiries: "진료과목 문의", departmentPhoneInquiries: "진료과목 전화문의", departmentOnlineInquiries: "진료과목 온라인문의", departmentReservations: "진료과목 예약", departmentPhoneReservations: "진료과목 전화예약", departmentOnlineReservations: "진료과목 온라인예약", departmentNewVisits: "진료과목 신환 내원", channelInquiries: "채널 문의", channelReservations: "채널 예약", referralNewVisits: "내원경로 신환 내원" }[row.metric] || row.metric}</b><span>{row.total.toLocaleString("ko-KR")}</span><span>{row.detailTotal.toLocaleString("ko-KR")}</span><strong className={row.passed ? "reconcile-pass" : "reconcile-fail"}>{row.passed ? "일치" : `불일치 ${Math.abs(row.total - row.detailTotal).toLocaleString("ko-KR")}`}</strong></div>)}
-          {!reconciliationRows.length ? <div className="data-empty-row">검증할 실데이터가 없습니다.</div> : null}
+          <div className="table-head source-ledger-head"><span>데이터 원천</span><span>상태</span><span>반영 행</span><span>적용 기간</span><span>최근 성공</span></div>
+          {dataSourceRows.map((row) => <div className="table-row source-ledger-row" key={row.label}><b>{row.label}</b><strong className={row.count > 0 ? "source-live" : "source-empty"}><i className={`status-dot ${row.count > 0 ? "good" : "wait"}`} />{row.state}</strong><span>{row.count.toLocaleString("ko-KR")}행</span><span>{row.period}</span><span>{row.updated}</span></div>)}
         </div>
       </section>
 
-      <section className="panel table-panel data-template-map-panel">
-        <ChartHeader title="페이지별 데이터 템플릿" />
-        <p className="table-helper">각 화면에서 사용하는 지표와 업로드 원천 테이블을 같은 기준으로 정리했습니다.</p>
-        <div className="data-template-map-grid">
-          {templatePageGroups.map((group) => (
-            <article className="data-template-map-card" key={group.page}>
-              <span>{group.page}</span>
-              <strong>{group.tables}</strong>
-              <small>{group.output}</small>
-            </article>
-          ))}
+      <section className="panel data-quality-rules-panel" id="data-reconciliation">
+        <ChartHeader title="자동 품질 검사" right={<span className={`reconcile-status ${unresolvedIssueCount === 0 ? "pass" : "fail"}`}>{unresolvedIssueCount === 0 ? "통과" : `${unresolvedIssueCount}건 확인`}</span>} />
+        <div className="quality-rule-grid">
+          <article className={dataTrustSummary.missingLinks ? "rule-fail" : "rule-pass"}><span>관계 무결성</span><strong>{dataTrustSummary.missingLinks ? `${dataTrustSummary.missingLinks}건 누락` : "정상"}</strong><small>문의 → 예약 → 내원 → 결제 연결</small></article>
+          <article className={dataTrustSummary.duplicates ? "rule-fail" : "rule-pass"}><span>중복 식별키</span><strong>{dataTrustSummary.duplicates ? `${dataTrustSummary.duplicates}건 후보` : "정상"}</strong><small>선택 기간 업로드 배치 기준</small></article>
+          <article className={(dataQuality?.uploadSummary.errors ?? 0) ? "rule-fail" : "rule-pass"}><span>형식·필수값</span><strong>{dataQuality?.uploadSummary.errors ? `${dataQuality.uploadSummary.errors}건 오류` : "정상"}</strong><small>오류 파일은 운영 집계에서 제외</small></article>
+          <article className={dataTrustSummary.mismatches ? "rule-fail" : "rule-pass"}><span>합계 대사</span><strong>{dataTrustSummary.mismatches ? `${dataTrustSummary.mismatches}개 불일치` : "정상"}</strong><small>원천 집계와 일자별 상세 비교</small></article>
+        </div>
+      </section>
+
+      <section className="panel table-panel reconciliation-panel">
+        <ChartHeader title="원천 · 보정 · 최종 수치 대사표" />
+        <p className="table-helper">선택 기간 {activeDateRange.start} ~ {activeDateRange.end} 기준입니다. 보정값은 원천을 덮어쓰지 않고 최종 KPI에 별도로 적용합니다.</p>
+        <div className="data-table">
+          <div className="table-head reconciliation-head"><span>지표</span><span>원천 합계</span><span>세부 합계</span><span>수동 보정</span><span>최종 반영</span><span>검증</span></div>
+          {reconciliationRows.map((row) => { const adjustment = row.adjustment ?? 0; const finalTotal = row.finalTotal ?? row.total; return <div className="table-row reconciliation-row" key={row.metric}><b>{{ inquiries: "문의", reservations: "예약", visits: "내원", sales: "매출", adSpend: "광고비", departmentInquiries: "진료과목 문의", departmentPhoneInquiries: "진료과목 전화문의", departmentOnlineInquiries: "진료과목 온라인문의", departmentReservations: "진료과목 예약", departmentPhoneReservations: "진료과목 전화예약", departmentOnlineReservations: "진료과목 온라인예약", departmentNewVisits: "진료과목 신환 내원", channelInquiries: "채널 문의", channelReservations: "채널 예약", referralNewVisits: "내원경로 신환 내원" }[row.metric] || row.metric}</b><span>{row.total.toLocaleString("ko-KR")}</span><span>{row.detailTotal.toLocaleString("ko-KR")}</span><span className={adjustment ? "adjustment-applied" : "adjustment-empty"}>{adjustment ? `${adjustment > 0 ? "+" : ""}${adjustment.toLocaleString("ko-KR")}` : "-"}</span><strong>{finalTotal.toLocaleString("ko-KR")}</strong><strong className={row.passed ? "reconcile-pass" : "reconcile-fail"}>{row.passed ? (adjustment ? "일치 · 보정" : "일치") : `불일치 ${Math.abs(row.total - row.detailTotal).toLocaleString("ko-KR")}`}</strong></div>; })}
+          {!reconciliationRows.length ? <div className="data-empty-row">검증할 실데이터가 없습니다.</div> : null}
         </div>
       </section>
 
@@ -4299,23 +4328,23 @@ export default function Home() {
         <p className="table-helper">업로드된 원천 데이터의 일자별 합계입니다. 저장한 문의·예약·내원·매출·광고비는 같은 기간의 KPI에 즉시 반영되며, 세부 원천 합계와 차이가 생기면 대사 경고로 표시됩니다.</p>
         <div className="data-table">
           <div className="table-head daily-data-head">
-            <span>일자</span><span>상담</span><span>예약</span><span>내원</span><span>예약률</span><span>내원율</span><span>매출</span><span>광고비</span>
+            <span>일자</span><span>문의</span><span>예약</span><span>내원</span><span>예약률</span><span>내원율</span><span>매출</span><span>광고비</span>
           </div>
           {visibleDailyData.map((row) => (
             <div className="table-row daily-data-row" key={row.date}>
-              <b>{row.date}{editedDailyDates.includes(row.date) ? <small className="daily-edited-badge">수정</small> : null}</b>
-              {(["inquiries", "reservations", "visits"] as const).map((field) => canManageData ? <input key={field} inputMode="numeric" aria-label={`${row.date} ${field}`} value={row[field]} onChange={(event) => updateDailyData(row.date, field, event.target.value)} /> : <span key={field}>{row[field].toLocaleString("ko-KR")}</span>)}
+              <b>{row.date}{editedDailyDates.includes(row.date) ? <small className="daily-edited-badge">수정 중</small> : dataQuality?.overrides?.some((item) => item.date === row.date) ? <small className="daily-override-badge">보정 적용</small> : null}</b>
+              {(["inquiries", "reservations", "visits"] as const).map((field) => canManageData ? <label className="daily-value-editor" key={field}><input inputMode="numeric" aria-label={`${row.date} ${field}`} value={row[field]} onChange={(event) => updateDailyData(row.date, field, event.target.value)} /><small>원천 {(sourceDailyByDate.get(row.date)?.[field] ?? 0).toLocaleString("ko-KR")}</small></label> : <span key={field}>{row[field].toLocaleString("ko-KR")}<small>원천 {(sourceDailyByDate.get(row.date)?.[field] ?? 0).toLocaleString("ko-KR")}</small></span>)}
               <span className="daily-rate">{row.inquiries === 0 ? "-" : `${Math.round((row.reservations / row.inquiries) * 1000) / 10}%`}</span>
               <span className="daily-rate">{row.reservations === 0 ? "-" : `${Math.round((row.visits / row.reservations) * 1000) / 10}%`}</span>
-              {canManageData ? <input inputMode="numeric" aria-label={`${row.date} 매출`} value={row.sales} onChange={(event) => updateDailyData(row.date, "sales", event.target.value)} /> : <span>{formatWon(row.sales)}</span>}
-              {canManageData ? <input inputMode="numeric" aria-label={`${row.date} 광고비`} value={row.adSpend} onChange={(event) => updateDailyData(row.date, "adSpend", event.target.value)} /> : <span>{formatWon(row.adSpend)}</span>}
+              {canManageData ? <label className="daily-value-editor"><input inputMode="numeric" aria-label={`${row.date} 매출`} value={row.sales} onChange={(event) => updateDailyData(row.date, "sales", event.target.value)} /><small>원천 {formatWon(sourceDailyByDate.get(row.date)?.sales ?? 0)}</small></label> : <span>{formatWon(row.sales)}<small>원천 {formatWon(sourceDailyByDate.get(row.date)?.sales ?? 0)}</small></span>}
+              {canManageData ? <label className="daily-value-editor"><input inputMode="numeric" aria-label={`${row.date} 광고비`} value={row.adSpend} onChange={(event) => updateDailyData(row.date, "adSpend", event.target.value)} /><small>원천 {formatWon(sourceDailyByDate.get(row.date)?.adSpend ?? 0)}</small></label> : <span>{formatWon(row.adSpend)}<small>원천 {formatWon(sourceDailyByDate.get(row.date)?.adSpend ?? 0)}</small></span>}
             </div>
           ))}
           {visibleDailyData.length === 0 ? <div className="data-empty-row">선택 기간에 연결된 실데이터가 없습니다.</div> : null}
         </div>
       </section>
 
-      <section className="panel table-panel daily-history-panel">
+      <section className="panel table-panel daily-history-panel" id="data-history">
         <ChartHeader title="일자별 수치 수정 이력" right={<span className="chart-period-note">선택 기간 · 최근 {dataQuality?.overrideHistory?.length ?? 0}건</span>} />
         <p className="table-helper">관리자가 직접 수정해 저장한 값만 표시합니다. 동일 일자를 여러 번 수정한 경우 최신 기록부터 모두 보존됩니다.</p>
         <div className="data-table">
@@ -4338,9 +4367,14 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="panel table-panel data-label-panel">
-        <ChartHeader
-          title={`${selectedImportContract.label} 데이터 레이블`}
+      <details className="panel data-help-panel">
+        <summary>템플릿과 데이터 필드 안내</summary>
+        <div className="data-help-content">
+          <div className="data-template-map-grid">
+            {templatePageGroups.map((group) => <article className="data-template-map-card" key={group.page}><span>{group.page}</span><strong>{group.tables}</strong><small>{group.output}</small></article>)}
+          </div>
+          <ChartHeader
+          title={`${selectedImportContract.label} 업로드 필드`}
           right={
             <label className="table-filter data-label-filter">
               템플릿
@@ -4350,10 +4384,10 @@ export default function Home() {
             </label>
           }
         />
-        <p className="table-helper">
+          <p className="table-helper">
           {selectedImportContract.purpose} · 기준일: <b>{selectedImportContract.primaryDateField}</b> · 중복 기준: <b>{selectedImportContract.dedupeKey}</b>
-        </p>
-        <div className="data-table">
+          </p>
+          <div className="data-table">
           <div className="table-head data-label-head">
             <span>컬럼명</span><span>표시명</span><span>형식</span><span>필수</span><span>계산·표시 용도</span><span>입력 예시</span>
           </div>
@@ -4367,8 +4401,9 @@ export default function Home() {
               <span>{field.example}</span>
             </div>
           ))}
+          </div>
         </div>
-      </section>
+      </details>
     </>
   );
 
@@ -4433,7 +4468,7 @@ export default function Home() {
           <span className="ai-pill">{isAuthenticated ? "SIGNED IN" : "SETTINGS PREVIEW"}</span>
           <h2>설정 화면</h2>
           <p>
-            병원 정보, 표시 기준, 알림, 권한을 한 화면에서 확인할 수 있도록 정리했습니다.
+            병원 운영 기준, 사용자 권한, KPI 목표와 외부 데이터 연결을 한 화면에서 관리합니다.
             {isAuthenticated
               ? " 로그인 상태에서는 바로 변경과 확인을 이어서 볼 수 있습니다."
               : " 로그인하면 같은 화면에서 바로 수정 흐름으로 이어집니다."}
@@ -4464,7 +4499,17 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="panel kpi-panel">
+      <nav className="settings-section-nav" aria-label="설정 영역 바로가기">
+        <a href="#settings-basic">기본 설정</a>
+        <a href="#settings-users">사용자·권한</a>
+        <a href="#settings-kpi">KPI 목표</a>
+        <a href="#settings-ai">AI 분석</a>
+        <a href="#settings-data-policy">데이터 기준·품질</a>
+        <a href="#settings-integrations">외부 연동</a>
+        <a href="#settings-history">변경 이력</a>
+      </nav>
+
+      <section className="panel kpi-panel settings-anchor-section" id="settings-basic">
         <div className="section-title">기본 설정</div>
         <div className="settings-grid">
           <article className="setting-card">
@@ -4476,13 +4521,6 @@ export default function Home() {
             <div className="setting-row">
               <span>기준 지점</span>
               <input className="setting-input" value={hospitalLocation} onChange={(event) => { setHospitalLocation(event.target.value); setIsSettingsDirty(true); }} aria-label="기준 지점" />
-            </div>
-            <div className="setting-row">
-              <span>언어</span>
-              <select className="setting-input" value={settingsLocale} onChange={(event) => { setSettingsLocale(event.target.value); setIsSettingsDirty(true); }} aria-label="언어">
-                <option>한국어</option>
-                <option>English</option>
-              </select>
             </div>
           </article>
 
@@ -4500,31 +4538,11 @@ export default function Home() {
                 {compareOptions.map((option) => <option key={option} value={option}>{option}</option>)}
               </select>
             </div>
-            <div className="setting-row">
-              <span>요일 표기</span>
-              <strong>월~일</strong>
-            </div>
-          </article>
-
-          <article className="setting-card">
-            <h3>알림</h3>
-            <div className="toggle-row">
-              <span>오류 파일 알림</span>
-              <button type="button" className={`toggle ${notifications.errors ? "on" : ""}`} aria-pressed={notifications.errors} onClick={() => { setNotifications((current) => ({ ...current, errors: !current.errors })); setIsSettingsDirty(true); }} />
-            </div>
-            <div className="toggle-row">
-              <span>일일 요약 메일</span>
-              <button type="button" className={`toggle ${notifications.summary ? "on" : ""}`} aria-pressed={notifications.summary} onClick={() => { setNotifications((current) => ({ ...current, summary: !current.summary })); setIsSettingsDirty(true); }} />
-            </div>
-            <div className="toggle-row">
-              <span>변동 감지 알림</span>
-              <button type="button" className={`toggle ${notifications.changes ? "on" : ""}`} aria-pressed={notifications.changes} onClick={() => { setNotifications((current) => ({ ...current, changes: !current.changes })); setIsSettingsDirty(true); }} />
-            </div>
           </article>
         </div>
       </section>
 
-      <section className="panel table-panel settings-management-panel">
+      <section className="panel table-panel settings-management-panel settings-anchor-section" id="settings-users">
         <ChartHeader title="사용자 · 권한 관리" right={<button className="pill" type="button" disabled={!canManageSettings} onClick={() => { setUsers((current) => [...current, { email: "", name: "", organization: hospitalLocation, role: "조회 전용", recentAccess: "접속 기록 없음" }]); setIsSettingsDirty(true); }}>사용자 추가</button>} />
         <p className="table-helper">서버가 로그인 이메일과 저장된 역할을 대조합니다. 설정은 최고관리자·병원 관리자, 데이터 관리는 마케팅 이상만 변경할 수 있습니다.</p>
         {userAccessValidation ? <p className="user-access-validation" role="alert">{userAccessValidation}</p> : <p className="user-access-validation pass">권한 구성 정상 · 최고관리자 {users.filter((user) => user.role === "최고관리자").length}명</p>}
@@ -4547,7 +4565,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="panel table-panel settings-management-panel">
+      <section className="panel table-panel settings-management-panel settings-anchor-section" id="settings-kpi">
         <ChartHeader title="KPI 목표 현황 · 설정" />
         <p className="table-helper">병원 전체 목표와 대표 진료과목·광고 매체 목표를 함께 설정하면 AI가 달성 여부와 우선순위를 비교합니다.</p>
         <div className="goal-status-grid">
@@ -4565,28 +4583,7 @@ export default function Home() {
           ))}
         </div>
       </section>
-      <section className="panel table-panel settings-management-panel">
-        <ChartHeader title="설정 변경 이력" />
-        <p className="table-helper">누가 언제 설정과 권한을 변경했는지 서버 감사 로그로 보존합니다.</p>
-        <div className="data-table">
-          <div className="table-head settings-history-head"><span>일시</span><span>작업자</span><span>변경 내용</span><span>대상·결과</span></div>
-          {settingsHistory.map((row, index) => (
-            <div className="table-row settings-history-row" key={`${row.createdAt}-${row.action}-${row.targetId ?? index}`}>
-              <span>{new Date(row.createdAt).toLocaleString("ko-KR")}</span>
-              <b>{row.userId}</b>
-              <span>{settingsActionLabels[row.action] ?? row.action}</span>
-              <strong>{row.metadata?.email
-                ? `${row.metadata.email}${row.metadata.beforeRole !== row.metadata.afterRole ? ` · ${row.metadata.beforeRole ?? "신규"} → ${row.metadata.afterRole ?? "삭제"}` : ""}`
-                : row.metadata?.detail
-                  ? `${row.metadata.metric ? `${row.metadata.metric} · ` : ""}${row.metadata.detail}`
-                  : row.metadata?.userCount !== undefined ? `사용자 ${row.metadata.userCount}명 · 최고관리자 ${row.metadata.ownerCount ?? "-"}명` : row.targetId ?? "-"}</strong>
-            </div>
-          ))}
-          {settingsHistory.length === 0 ? <div className="data-empty-row">아직 저장된 변경 이력이 없습니다.</div> : null}
-        </div>
-      </section>
-
-      <section className="panel settings-ai-panel">
+      <section className="panel settings-ai-panel settings-anchor-section" id="settings-ai">
         <ChartHeader title="AI 요약 · 자동 분석 설정" />
         <div className="settings-ai-grid">
           <div className="setting-row"><span>AI 요약 사용</span><button type="button" className={`toggle ${aiSettings.enabled ? "on" : ""}`} aria-pressed={aiSettings.enabled} onClick={() => { setAiSettings((current) => ({ ...current, enabled: !current.enabled })); setIsSettingsDirty(true); }} /></div>
@@ -4594,11 +4591,46 @@ export default function Home() {
           <label className="setting-row"><span>비교 기준</span><select className="setting-input" value={aiSettings.compare} onChange={(event) => { setAiSettings((current) => ({ ...current, compare: event.target.value })); setIsSettingsDirty(true); }}><option>전일</option><option>전주 동일기간</option><option>전월 동일기간</option><option>최근 4주 평균</option></select></label>
           <label className="setting-row"><span>이상 변화 감지</span><select className="setting-input" value={aiSettings.anomaly} onChange={(event) => { setAiSettings((current) => ({ ...current, anomaly: event.target.value })); setIsSettingsDirty(true); }}><option>5% 이상</option><option>10% 이상</option><option>15% 이상</option><option>20% 이상</option></select></label>
           <label className="setting-row"><span>추천 표시 수준</span><select className="setting-input" value={aiSettings.recommendation} onChange={(event) => { setAiSettings((current) => ({ ...current, recommendation: event.target.value })); setIsSettingsDirty(true); }}><option>핵심 3개</option><option>상세 5개</option><option>전체 추천</option></select></label>
-          <div className="setting-row"><span>GA4 자동 분석</span><button type="button" className={`toggle ${ga4Automation ? "on" : ""}`} aria-pressed={ga4Automation} onClick={() => { setGa4Automation((enabled) => !enabled); setIsSettingsDirty(true); }} /></div>
-          <div className="setting-row"><span>구글 시트 자동 동기화</span><button type="button" className={`toggle ${googleSheetAutomation ? "on" : ""}`} aria-pressed={googleSheetAutomation} onClick={() => { setGoogleSheetAutomation((enabled) => !enabled); setIsSettingsDirty(true); }} /></div>
         </div>
       </section>
-      <section className="panel google-sheet-connect-panel">
+
+      <section className="panel table-panel settings-management-panel settings-anchor-section" id="settings-data-policy">
+        <ChartHeader title="데이터 기준 · 품질 관리" />
+        <p className="table-helper">메뉴마다 같은 분류와 검증 규칙을 사용합니다. 변경값은 서버에 저장되어 KPI·표·AI 분석의 공통 운영 기준이 됩니다.</p>
+        <div className="data-policy-checks">
+          <span className={unmatchedDepartmentLabels.length ? "warn" : "pass"}>진료분야 {unmatchedDepartmentLabels.length ? `미분류 ${unmatchedDepartmentLabels.length}개` : "분류 정상"}</span>
+          <span className={unmatchedInflowLabels.length ? "warn" : "pass"}>유입경로 {unmatchedInflowLabels.length ? `미분류 ${unmatchedInflowLabels.length}개` : "분류 정상"}</span>
+          <span className={reconciliationWarning ? "warn" : "pass"}>합계 대사 {reconciliationWarning ? "확인 필요" : "정상"}</span>
+        </div>
+        <div className="data-policy-grid">
+          <label className="data-policy-card">
+            <span>진료분야 기준</span>
+            <textarea disabled={!canManageSettings} value={dataPolicy.departmentCategories} onChange={(event) => { setDataPolicy((current) => ({ ...current, departmentCategories: event.target.value })); setIsSettingsDirty(true); }} />
+            <small>쉼표로 구분하며 모든 상담·내원·매출 표에 동일하게 적용합니다.</small>
+          </label>
+          <label className="data-policy-card">
+            <span>유입경로 기준</span>
+            <textarea disabled={!canManageSettings} value={dataPolicy.inflowChannels} onChange={(event) => { setDataPolicy((current) => ({ ...current, inflowChannels: event.target.value })); setIsSettingsDirty(true); }} />
+            <small>CRM과 광고 매체 명칭을 하나의 유입경로 체계로 관리합니다.</small>
+          </label>
+          <label className="data-policy-card">
+            <span>중복 판단 기준</span>
+            <input disabled={!canManageSettings} value={dataPolicy.duplicateRule} onChange={(event) => { setDataPolicy((current) => ({ ...current, duplicateRule: event.target.value })); setIsSettingsDirty(true); }} />
+            <small>같은 원천 데이터가 두 번 집계되지 않도록 검사합니다.</small>
+          </label>
+          <label className="data-policy-card">
+            <span>합계 불일치 처리</span>
+            <select disabled={!canManageSettings} value={dataPolicy.mismatchPolicy} onChange={(event) => { setDataPolicy((current) => ({ ...current, mismatchPolicy: event.target.value })); setIsSettingsDirty(true); }}>
+              <option>합계 불일치 시 AI 분석 보류</option>
+              <option>경고 표시 후 분석 유지</option>
+              <option>관리자 확인 전 데이터 미반영</option>
+            </select>
+            <small>기간 합계와 세부 합계가 다를 때의 처리 원칙입니다.</small>
+          </label>
+        </div>
+      </section>
+
+      <section className="panel google-sheet-connect-panel settings-anchor-section" id="settings-integrations">
         <div className="google-sheet-connect-copy">
           <span className="ai-pill">GOOGLE SHEETS</span>
           <h2>CRM·광고 운영 시트 연동</h2>
@@ -4609,6 +4641,7 @@ export default function Home() {
           </div>
         </div>
         <div className="google-sheet-connect-form">
+          <div className="setting-row"><span>자동 동기화</span><button type="button" className={`toggle ${googleSheetAutomation ? "on" : ""}`} aria-pressed={googleSheetAutomation} onClick={() => { setGoogleSheetAutomation((enabled) => !enabled); setIsSettingsDirty(true); }} /></div>
           <label><span>구글 시트 주소 또는 ID</span><input disabled={!canManageSettings} value={googleSheetId} onChange={(event) => { setGoogleSheetId(event.target.value); setIsSettingsDirty(true); }} placeholder="https://docs.google.com/spreadsheets/d/..." /></label>
           <label><span>서비스 계정 공유 주소</span><input readOnly value={googleSheetStatus?.serviceAccountEmail || "환경변수 설정 후 표시"} /></label>
           <div className={`google-sheet-status ${googleSheetSyncState}`}><strong>{googleSheetStatus?.configured ? "연결 준비 완료" : "연결 설정 필요"}</strong><span>{googleSheetMessage}</span></div>
@@ -4651,6 +4684,7 @@ export default function Home() {
           </ol>
         </div>
         <div className="ga4-connect-form">
+          <div className="setting-row"><span>자동 분석</span><button type="button" className={`toggle ${ga4Automation ? "on" : ""}`} aria-pressed={ga4Automation} onClick={() => { setGa4Automation((enabled) => !enabled); setIsSettingsDirty(true); }} /></div>
           <label><span>연동 상태</span><input readOnly value={ga4LoadState === "loading" ? "데이터 조회 중" : ga4LoadState === "live" ? "실데이터 연결 완료" : "권한 또는 API 상태 확인 필요"} /></label>
           <label><span>반영 기준일</span><input readOnly value={`${activeDateRange.start} ~ ${activeDateRange.end}`} /></label>
           <button className="primary-button" type="button" disabled={ga4LoadState === "loading"} onClick={() => setGa4RefreshKey((value) => value + 1)}>GA4 데이터 새로고침</button>
@@ -4730,6 +4764,27 @@ export default function Home() {
             ) : null}
           </>
         ) : <div className="place-rank-empty">등록된 추적 키워드가 없습니다.</div>}
+      </section>
+
+      <section className="panel table-panel settings-management-panel settings-anchor-section" id="settings-history">
+        <ChartHeader title="설정 변경 이력" />
+        <p className="table-helper">누가 언제 설정과 권한을 변경했는지 서버 감사 로그로 보존합니다.</p>
+        <div className="data-table">
+          <div className="table-head settings-history-head"><span>일시</span><span>작업자</span><span>변경 내용</span><span>대상·결과</span></div>
+          {settingsHistory.map((row, index) => (
+            <div className="table-row settings-history-row" key={`${row.createdAt}-${row.action}-${row.targetId ?? index}`}>
+              <span>{new Date(row.createdAt).toLocaleString("ko-KR")}</span>
+              <b>{row.userId}</b>
+              <span>{settingsActionLabels[row.action] ?? row.action}</span>
+              <strong>{row.metadata?.email
+                ? `${row.metadata.email}${row.metadata.beforeRole !== row.metadata.afterRole ? ` · ${row.metadata.beforeRole ?? "신규"} → ${row.metadata.afterRole ?? "삭제"}` : ""}`
+                : row.metadata?.detail
+                  ? `${row.metadata.metric ? `${row.metadata.metric} · ` : ""}${row.metadata.detail}`
+                  : row.metadata?.userCount !== undefined ? `사용자 ${row.metadata.userCount}명 · 최고관리자 ${row.metadata.ownerCount ?? "-"}명` : row.targetId ?? "-"}</strong>
+            </div>
+          ))}
+          {settingsHistory.length === 0 ? <div className="data-empty-row">아직 저장된 변경 이력이 없습니다.</div> : null}
+        </div>
       </section>
     </>
   );
