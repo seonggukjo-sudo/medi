@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { accessErrorResponse, requireAccess } from "@/lib/server-access";
 import { createGoogleAccessToken } from "@/lib/google-service-account";
+import { POST as uploadCsv } from "@/app/api/uploads/route";
 
 export const runtime = "edge";
 const hospitalId = "demo-hospital";
@@ -243,12 +244,21 @@ export async function POST(request: Request) {
         const value = request.headers.get(headerName);
         if (value) forwardedHeaders.set(headerName, value);
       }
-      const uploadResponse = await fetch(new URL("/api/uploads", request.url), {
+      // Call the upload handler in-process. A network request back to this Worker is
+      // intercepted by Cloudflare Access and returns a non-JSON 1042 response.
+      const uploadResponse = await uploadCsv(new Request(new URL("/api/uploads", request.url), {
         method: "POST",
         headers: forwardedHeaders,
         body: formData,
-      });
-      const uploadBody = await uploadResponse.json() as { error?: string; savedRows?: number; status?: string };
+      }));
+      const uploadText = await uploadResponse.text();
+      const uploadBody = (() => {
+        try {
+          return JSON.parse(uploadText) as { error?: string; savedRows?: number; status?: string };
+        } catch {
+          return { error: uploadText || `Upload handler returned HTTP ${uploadResponse.status}` };
+        }
+      })();
       if (!uploadResponse.ok) throw new Error(`${tab.range.split("!")[0]} 탭: ${uploadBody.error || "동기화 실패"}`);
       results.push({ tableKey: tab.tableKey, status: uploadBody.status, savedRows: uploadBody.savedRows ?? 0 });
     }
