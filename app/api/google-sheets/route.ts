@@ -95,6 +95,78 @@ function rowsToCsv(rows: unknown[][]) {
   return `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
 }
 
+function parseCsvTable(csv: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let index = 0; index < csv.length; index += 1) {
+    const character = csv[index];
+    if (quoted) {
+      if (character === '"' && csv[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else if (character === '"') {
+        quoted = false;
+      } else {
+        cell += character;
+      }
+    } else if (character === '"') {
+      quoted = true;
+    } else if (character === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (character === "\n") {
+      row.push(cell.replace(/\r$/, ""));
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+
+  if (cell || row.length) {
+    row.push(cell.replace(/\r$/, ""));
+    rows.push(row);
+  }
+  return rows.filter((values) => values.some((value) => value.trim() !== ""));
+}
+
+async function fetchServiceAccountTabs(config: Awaited<ReturnType<typeof loadConfiguration>>) {
+  if (!config.clientEmail || !config.privateKey) throw new Error("Google service account is not configured.");
+  const token = await createGoogleAccessToken(config.clientEmail, config.privateKey, sheetsScope);
+  const query = new URLSearchParams({ majorDimension: "ROWS" });
+  sheetTabs.forEach((tab) => query.append("ranges", tab.range));
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}/values:batchGet?${query}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const googleError = await response.json().catch(() => null) as { error?: { message?: string; details?: Array<{ reason?: string }> } } | null;
+    const reason = googleError?.error?.details?.map((item) => item.reason).filter(Boolean).join(", ");
+    throw new Error(googleError?.error?.message || reason || `Google Sheets API HTTP ${response.status}`);
+  }
+  const body = await response.json() as { valueRanges?: Array<{ values?: unknown[][] }> };
+  return sheetTabs.map((_, index) => body.valueRanges?.[index]?.values ?? []);
+}
+
+async function fetchPublicTabs(sheetId: string) {
+  return Promise.all(sheetTabs.map(async (tab) => {
+    const tabName = tab.range.split("!")[0];
+    const query = new URLSearchParams({ tqx: "out:csv", sheet: tabName });
+    const response = await fetch(`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?${query}`, {
+      redirect: "follow",
+      headers: { accept: "text/csv" },
+    });
+    const csv = await response.text();
+    if (!response.ok || /^\s*<!doctype html/i.test(csv) || /^\s*<html/i.test(csv)) {
+      throw new Error(`Public sheet tab '${tabName}' could not be read (HTTP ${response.status}).`);
+    }
+    return parseCsvTable(csv.replace(/^\uFEFF/, ""));
+  }));
+}
+
 async function loadConfiguration() {
   const runtimeEnv = env as unknown as RuntimeEnv;
   const row = await env.DB.prepare("SELECT alert_policy_json AS settingsJson FROM hospital_settings WHERE hospital_id = ?")
@@ -132,27 +204,24 @@ export async function POST(request: Request) {
     const access = await requireAccess(request, hospitalId, ["owner", "admin", "marketer"]);
     const config = await loadConfiguration();
     if (!config.sheetId) return Response.json({ error: "설정에서 구글 시트 주소를 저장해 주세요." }, { status: 400 });
-    if (!config.clientEmail || !config.privateKey) return Response.json({ error: "Google 서비스 계정 환경변수가 설정되지 않았습니다." }, { status: 503 });
-
-    const token = await createGoogleAccessToken(config.clientEmail, config.privateKey, sheetsScope);
-    const query = new URLSearchParams({ majorDimension: "ROWS" });
-    sheetTabs.forEach((tab) => query.append("ranges", tab.range));
-    const sheetResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}/values:batchGet?${query}`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    if (!sheetResponse.ok) {
-      const googleError = await sheetResponse.json().catch(() => null) as { error?: { message?: string; details?: Array<{ reason?: string }> } } | null;
-      const reason = googleError?.error?.details?.map((item) => item.reason).filter(Boolean).join(", ");
-      const detail = googleError?.error?.message || reason || `HTTP ${sheetResponse.status}`;
-      if (sheetResponse.status === 403) throw new Error(`Google Sheets API 접근이 거부되었습니다. ${detail}`);
-      if (sheetResponse.status === 404) throw new Error("저장된 구글 시트 주소 또는 시트 탭 이름을 확인해 주세요.");
-      throw new Error(`구글 시트 데이터를 읽지 못했습니다. ${detail}`);
+    let sourceMode: "service_account" | "public_link" = "service_account";
+    let tabRows: unknown[][][];
+    try {
+      tabRows = await fetchServiceAccountTabs(config);
+    } catch (serviceAccountError) {
+      try {
+        tabRows = await fetchPublicTabs(config.sheetId);
+        sourceMode = "public_link";
+      } catch (publicError) {
+        const apiDetail = serviceAccountError instanceof Error ? serviceAccountError.message : String(serviceAccountError);
+        const publicDetail = publicError instanceof Error ? publicError.message : String(publicError);
+        throw new Error(`Google Sheets sync failed. API: ${apiDetail} Public link: ${publicDetail}`);
+      }
     }
-    const sheetBody = await sheetResponse.json() as { valueRanges?: Array<{ values?: unknown[][] }> };
     const results = [];
     for (let index = 0; index < sheetTabs.length; index += 1) {
       const tab = sheetTabs[index];
-      const rows = normalizedAdRows(sheetBody.valueRanges?.[index]?.values ?? [], "adSource" in tab ? tab.adSource : undefined);
+      const rows = normalizedAdRows(tabRows[index] ?? [], "adSource" in tab ? tab.adSource : undefined);
       if (rows.length <= 1) {
         results.push({ tableKey: tab.tableKey, status: "empty", savedRows: 0 });
         continue;
@@ -186,8 +255,8 @@ export async function POST(request: Request) {
     const syncedAt = new Date().toISOString();
     const savedRows = results.reduce((sum, row) => sum + row.savedRows, 0);
     await env.DB.prepare("INSERT INTO audit_logs (log_id, hospital_id, user_id, action, target_type, target_id, created_at, metadata_json) VALUES (?, ?, ?, 'google_sheet_sync', 'integration', ?, ?, ?)")
-      .bind(crypto.randomUUID(), hospitalId, access.email, config.sheetId, syncedAt, JSON.stringify({ savedRows, results })).run();
-    return Response.json({ synced: true, syncedAt, savedRows, results });
+      .bind(crypto.randomUUID(), hospitalId, access.email, config.sheetId, syncedAt, JSON.stringify({ savedRows, results, sourceMode })).run();
+    return Response.json({ synced: true, syncedAt, savedRows, results, sourceMode });
   } catch (error) {
     return accessErrorResponse(error, "구글 시트 동기화에 실패했습니다.");
   }
