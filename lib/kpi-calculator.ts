@@ -24,10 +24,21 @@ export type ImportedKpiSummary = {
   noShowEligible: number;
   noShowRate: number | null;
   sales: number;
+  paymentCount: number;
+  paymentPatientCount: number;
   adSpend: number;
+  onlineAdSpend: number;
+  crmSpend: number;
+  fixedAdSpend: number;
+  unreserved: number;
+  cancelledReservation: number;
+  returnVisit: number;
+  outpatientVisit: number;
+  inpatientVisit: number;
   reservationRate: number | null;
   reservationVisitRate: number | null;
   inquiryVisitRate: number | null;
+  visitPaymentRate: number | null;
   cpl: number | null;
   cpv: number | null;
   roas: number | null;
@@ -47,6 +58,11 @@ export type DepartmentKpiSummary = {
   walkInVisits: number;
   visits: number;
   sales: number;
+  payments: number;
+  adSpend: number;
+  cpl: number | null;
+  cpv: number | null;
+  roas: number | null;
 };
 
 export type ChannelKpiSummary = {
@@ -58,6 +74,7 @@ export type ChannelKpiSummary = {
   phoneReservations: number;
   onlineReservations: number;
   visits: number;
+  newVisits: number;
   sales: number;
   adSpend: number;
   impressions: number;
@@ -74,7 +91,15 @@ export type ChannelKpiSummary = {
 
 export type ReferralKpiSummary = {
   source: string;
+  inquiries: number;
+  reservations: number;
   newVisits: number;
+  walkInVisits: number;
+  sales: number;
+  adSpend: number;
+  reservationRate: number | null;
+  cpl: number | null;
+  cpv: number | null;
   share: number | null;
 };
 
@@ -152,6 +177,34 @@ function isNewVisit(row: ImportRow) {
   return isCompletedVisit(row) && text(row.visit_type) === "신환";
 }
 
+function hasValue(row: ImportRow, keys: string[], values: string[]) {
+  const raw = keys.map((key) => text(row[key])).join(" ").toLowerCase();
+  return values.some((value) => raw.includes(value));
+}
+
+function isUnreservedLead(row: ImportRow) {
+  return hasValue(row, ["status", "consult_result"], ["unreserved", "not booked", "미예약"]);
+}
+
+function isCancelledAppointment(row: ImportRow) {
+  return hasValue(row, ["status"], ["cancel", "취소"]);
+}
+
+function isOutpatientVisit(row: ImportRow) {
+  return hasValue(row, ["visit_setting", "care_setting"], ["outpatient", "외래"]);
+}
+
+function isInpatientVisit(row: ImportRow) {
+  return hasValue(row, ["visit_setting", "care_setting"], ["inpatient", "입원"]);
+}
+
+function resolveCostType(row: ImportRow) {
+  const value = text(row.cost_type).toLowerCase();
+  if (value.includes("crm")) return "crm" as const;
+  if (value.includes("fixed") || value.includes("고정")) return "fixed" as const;
+  return "online" as const;
+}
+
 function resolveLeadChannel(row: ImportRow) {
   return text(row.source_channel) || "기타";
 }
@@ -219,8 +272,19 @@ export function calculateImportedKpis(rows: ImportedDashboardRows, options: Impo
   const reservation = uniqueCount(bookedAppointments, "appointment_id");
   const visit = uniqueCount(completedVisits, "visit_id");
   const newVisit = uniqueCount(newVisits, "visit_id");
-  const sales = roundMoney(sumRows(rows.payments, "net_amount"));
+  const uniquePayments = uniqueRows(rows.payments, "payment_id");
+  const sales = roundMoney(sumRows(uniquePayments, "net_amount"));
+  const paymentCount = uniqueCount(uniquePayments, "payment_id");
+  const paymentPatientCount = uniqueCount(uniquePayments, "patient_key", (row) => Boolean(text(row.patient_key))) || paymentCount;
   const adSpend = roundMoney(sumRows(rows.adSpend, "cost"));
+  const onlineAdSpend = roundMoney(sumRows(rows.adSpend, "cost", (row) => resolveCostType(row) === "online"));
+  const crmSpend = roundMoney(sumRows(rows.adSpend, "cost", (row) => resolveCostType(row) === "crm"));
+  const fixedAdSpend = roundMoney(sumRows(rows.adSpend, "cost", (row) => resolveCostType(row) === "fixed"));
+  const unreserved = uniqueCount(validLeads, "lead_id", isUnreservedLead);
+  const cancelledReservation = uniqueCount(rows.appointments, "appointment_id", isCancelledAppointment);
+  const returnVisit = uniqueCount(completedVisits, "visit_id", (row) => !isNewVisit(row));
+  const outpatientVisit = uniqueCount(completedVisits, "visit_id", isOutpatientVisit);
+  const inpatientVisit = uniqueCount(completedVisits, "visit_id", isInpatientVisit);
 
   const summary: ImportedKpiSummary = {
     inquiry,
@@ -244,10 +308,21 @@ export function calculateImportedKpis(rows: ImportedDashboardRows, options: Impo
     noShowEligible,
     noShowRate: percent(noShow, noShowEligible),
     sales,
+    paymentCount,
+    paymentPatientCount,
     adSpend,
+    onlineAdSpend,
+    crmSpend,
+    fixedAdSpend,
+    unreserved,
+    cancelledReservation,
+    returnVisit,
+    outpatientVisit,
+    inpatientVisit,
     reservationRate: percent(reservation, inquiry),
     reservationVisitRate: percent(bookedVisit, reservation),
     inquiryVisitRate: percent(newVisit, inquiry),
+    visitPaymentRate: percent(paymentCount, visit),
     cpl: inquiry === 0 ? null : roundMoney(adSpend / inquiry),
     cpv: newVisit === 0 ? null : roundMoney(adSpend / newVisit),
     roas: adSpend === 0 ? null : percent(sales, adSpend),
@@ -261,7 +336,8 @@ export function calculateImportedKpis(rows: ImportedDashboardRows, options: Impo
     ...validLeads.map((row) => resolvedDepartment(text(row.department))),
     ...bookedAppointments.map((row) => resolvedDepartment(appointmentDepartment(row, leadDepartments))),
     ...completedVisits.map((row) => resolvedDepartment(text(row.department))),
-    ...rows.payments.map((row) => resolvedDepartment(paymentDepartment(row, visitDepartments))),
+    ...uniquePayments.map((row) => resolvedDepartment(paymentDepartment(row, visitDepartments))),
+    ...rows.adSpend.map((row) => resolvedDepartment(text(row.department))),
   ];
   const departments = [...new Set(departmentValues)].map((department) => {
     const inquiries = uniqueCount(validLeads, "lead_id", (row) => resolvedDepartment(text(row.department)) === department);
@@ -278,7 +354,9 @@ export function calculateImportedKpis(rows: ImportedDashboardRows, options: Impo
     const newVisits = uniqueCount(departmentVisits, "visit_id", isNewVisit);
     const bookedVisits = uniqueCount(departmentVisits, "visit_id", (row) => isNewVisit(row) && bookedAppointmentIds.has(text(row.appointment_id)));
     const walkInVisits = Math.max(0, newVisits - bookedVisits);
-    const sales = roundMoney(sumRows(rows.payments, "net_amount", (row) => resolvedDepartment(paymentDepartment(row, visitDepartments)) === department));
+    const departmentPayments = uniquePayments.filter((row) => resolvedDepartment(paymentDepartment(row, visitDepartments)) === department);
+    const sales = roundMoney(sumRows(departmentPayments, "net_amount"));
+    const departmentAdSpend = roundMoney(sumRows(rows.adSpend, "cost", (row) => resolvedDepartment(text(row.department)) === department));
 
     return {
       department,
@@ -294,6 +372,11 @@ export function calculateImportedKpis(rows: ImportedDashboardRows, options: Impo
       walkInVisits,
       visits,
       sales,
+      payments: uniqueCount(departmentPayments, "payment_id"),
+      adSpend: departmentAdSpend,
+      cpl: inquiries === 0 ? null : roundMoney(departmentAdSpend / inquiries),
+      cpv: newVisits === 0 ? null : roundMoney(departmentAdSpend / newVisits),
+      roas: departmentAdSpend === 0 ? null : percent(sales, departmentAdSpend),
     };
   });
 
@@ -314,6 +397,7 @@ export function calculateImportedKpis(rows: ImportedDashboardRows, options: Impo
       const onlineReservations = Math.max(0, reservations - phoneReservations);
       const channelVisits = completedVisits.filter((row) => resolveVisitChannel(row) === channel);
       const visits = uniqueCount(channelVisits, "visit_id");
+      const newVisits = uniqueCount(channelVisits, "visit_id", isNewVisit);
       const adSpend = roundMoney(sumRows(rows.adSpend, "cost", (row) => resolveAdChannel(row) === channel));
       const impressions = roundMoney(sumRows(rows.adSpend, "impressions", (row) => resolveAdChannel(row) === channel));
       const clicks = roundMoney(sumRows(rows.adSpend, "clicks", (row) => resolveAdChannel(row) === channel));
@@ -331,6 +415,7 @@ export function calculateImportedKpis(rows: ImportedDashboardRows, options: Impo
         phoneReservations,
         onlineReservations,
         visits,
+        newVisits,
         sales,
         adSpend,
         impressions,
@@ -346,9 +431,31 @@ export function calculateImportedKpis(rows: ImportedDashboardRows, options: Impo
       };
     });
 
-  const referrals = [...new Set(newVisits.map(resolveVisitChannel))].map((source) => {
-    const count = uniqueCount(newVisits, "visit_id", (row) => resolveVisitChannel(row) === source);
-    return { source, newVisits: count, share: percent(count, newVisit) };
+  const referrals = [...new Set([
+    ...validLeads.map(resolveLeadChannel),
+    ...completedVisits.map(resolveVisitChannel),
+  ])].map((source) => {
+    const sourceInquiries = uniqueCount(validLeads, "lead_id", (row) => resolveLeadChannel(row) === source);
+    const sourceReservations = uniqueCount(bookedAppointments, "appointment_id", (row) => leadChannels.get(text(row.lead_id)) === source);
+    const sourceVisits = completedVisits.filter((row) => resolveVisitChannel(row) === source);
+    const sourceNewVisits = uniqueCount(sourceVisits, "visit_id", isNewVisit);
+    const sourceWalkInVisits = uniqueCount(sourceVisits, "visit_id", (row) => isNewVisit(row) && !bookedAppointmentIds.has(text(row.appointment_id)));
+    const sourceVisitIds = new Set(sourceVisits.map((row) => text(row.visit_id)));
+    const sourceSales = roundMoney(sumRows(uniquePayments, "net_amount", (row) => sourceVisitIds.has(text(row.visit_id))));
+    const sourceAdSpend = roundMoney(sumRows(rows.adSpend, "cost", (row) => resolveAdChannel(row) === source));
+    return {
+      source,
+      inquiries: sourceInquiries,
+      reservations: sourceReservations,
+      newVisits: sourceNewVisits,
+      walkInVisits: sourceWalkInVisits,
+      sales: sourceSales,
+      adSpend: sourceAdSpend,
+      reservationRate: percent(sourceReservations, sourceInquiries),
+      cpl: sourceInquiries === 0 ? null : roundMoney(sourceAdSpend / sourceInquiries),
+      cpv: sourceNewVisits === 0 ? null : roundMoney(sourceAdSpend / sourceNewVisits),
+      share: percent(sourceNewVisits, newVisit),
+    };
   });
 
   return { summary, departments, channels, referrals };

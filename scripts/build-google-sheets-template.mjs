@@ -7,6 +7,24 @@ const outputPath = path.join(repoRoot, "public", "medi-insight-google-sheets-tem
 
 const sheets = [
   {
+    name: "추가항목 안내",
+    rows: [
+      ["테이블", "영문 열 이름", "한글 항목", "입력 예시", "활용"],
+      ["상담문의", "chart_number", "차트번호/공통 연결키", "C-8F31A", "상담-예약-내원-결제 직접 연결 및 퍼널 대사"],
+      ["상담문의", "consult_result", "상담결과", "예약확정 / 미예약", "예약확정, 미예약 운영 지표"],
+      ["내원", "visit_setting", "방문형태", "예약내원 / 비예약내원", "비예약 내원 분석"],
+      ["내원", "care_setting", "진료구분", "외래 / 입원", "외래·입원 전환 분석"],
+      ["광고비", "cost_type", "비용구분", "online / crm / fixed", "통합 광고비 = 온라인 + CRM + 고정"],
+      ["광고비", "department", "진료분야", "교통사고", "진료분야별 광고비, CPL, 신환당 비용, ROAS"],
+      ["광고비", "sent_count", "CRM 발송수", "1200", "CRM 발송당 비용과 발송 대비 예약률"],
+      ["광고비", "crm_inquiries", "CRM 문의수", "34", "CRM 문의율과 문의당 비용"],
+      ["광고비", "crm_reservations", "CRM 예약수", "12", "CRM 예약당 비용"],
+      ["광고비", "crm_paid_customers", "CRM 결제고객수", "8", "CRM 결제고객당 비용"],
+      ["광고비", "fixed_contract_end", "고정비 계약종료일", "2026-12-31", "계약 종료 예정 비용 관리"],
+      ["주의", "공통", "연결 규칙", "lead_id → appointment_id → visit_id → payment_id", "기간 합계와 세부 합계 자동 대사"],
+    ],
+  },
+  {
     name: "입력안내",
     rows: [
       ["메디인사이트 Google Sheets 입력 템플릿"],

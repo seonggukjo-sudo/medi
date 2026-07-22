@@ -1867,6 +1867,35 @@ export default function Home() {
     ];
   }, [automatedNaverSourceRows.length, mergedAdSourceTotals]);
 
+  const crmAndFixedRows = useMemo(() => {
+    const number = (value: unknown) => Number(String(value ?? "").replaceAll(",", "")) || 0;
+    return importedRows.adSpend
+      .filter((row) => {
+        const date = String(row.spend_date ?? "").slice(0, 10);
+        const type = String(row.cost_type ?? "online").toLowerCase();
+        return date >= activeDateRange.start && date <= activeDateRange.end && (type.includes("crm") || type.includes("fixed") || type.includes("고정"));
+      })
+      .map((row) => {
+        const type = String(row.cost_type ?? "online").toLowerCase();
+        const spend = number(row.cost);
+        const sent = number(row.sent_count);
+        const inquiries = number(row.crm_inquiries);
+        const reservations = number(row.crm_reservations);
+        const paidCustomers = number(row.crm_paid_customers);
+        return {
+          type: type.includes("crm") ? "CRM" : "고정광고비",
+          name: String(row.campaign_id || row.channel || "미분류"),
+          department: String(row.department || "미분류"),
+          spend,
+          sent,
+          inquiries,
+          reservations,
+          paidCustomers,
+          contractEnd: String(row.fixed_contract_end || "-"),
+        };
+      });
+  }, [activeDateRange.end, activeDateRange.start, importedRows.adSpend]);
+
   const displayedConsultRows = useMemo(() => {
     if (!actualKpiResult) return [];
     return actualKpiResult.departments.map((row) => ({
@@ -2184,7 +2213,7 @@ export default function Home() {
     };
   }), [kpiGoalStatus, mainMetricCards]);
 
-  const executiveKpiCards = useMemo<MetricCard[]>(() => {
+  const legacyExecutiveKpiCards = useMemo<MetricCard[]>(() => {
     if (!actualKpiResult) return ["전체 문의", "전체 예약", "예약률", "신환 내원", "문의→내원율", "총 매출", "총 광고비", "ROAS"].map((label, index) => ({ label, value: "-", delta: "데이터 미연동", previous: "실데이터 연결 후 표시", icon: "", tone: (["green", "violet", "orange", "blue", "green", "violet", "orange", "blue"] as Tone[])[index] }));
     const current = actualKpiResult.summary;
     const previous = previousKpiResult?.summary ?? fallbackPreviousSummary;
@@ -2209,6 +2238,51 @@ export default function Home() {
       return goal ? { ...card, goalText: `목표 ${goal.hospital} · ${goal.passed ? "달성" : "미달"}`, goalPassed: goal.passed } : card;
     });
   }, [actualKpiResult, comparisonLabel, countDelta, kpiGoalStatus, mergedAdSourceRows.length, mergedAdSourceTotals.spend, previousKpiResult, rateDelta]);
+
+  const executiveKpiCards = useMemo<MetricCard[]>(() => {
+    const labels = ["전체 문의", "예약확정", "총 신환 내원", "비예약 내원", "총 결제매출", "총 광고비", "문의당 비용", "신환당 비용"];
+    if (!actualKpiResult) {
+      return labels.map((label, index) => ({
+        label,
+        value: "-",
+        delta: "데이터 미연동",
+        previous: "실데이터 연결 후 표시",
+        icon: "",
+        tone: (["green", "violet", "blue", "orange", "green", "orange", "violet", "blue"] as Tone[])[index],
+      }));
+    }
+    const current = actualKpiResult.summary;
+    const previous = previousKpiResult?.summary;
+    const value = (amount: number) => amount.toLocaleString("ko-KR");
+    const cost = (amount: number | null) => amount === null ? "-" : formatWon(amount);
+    return [
+      { label: "전체 문의", value: value(current.inquiry), delta: countDelta(current.inquiry, previous?.inquiry ?? 0), previous: `${comparisonLabel} · 전화 + 온라인 유효 문의`, icon: "", tone: "green" as const },
+      { label: "예약확정", value: value(current.reservation), delta: countDelta(current.reservation, previous?.reservation ?? 0), previous: `${comparisonLabel} · 예약확정 건수`, icon: "", tone: "violet" as const },
+      { label: "총 신환 내원", value: value(current.newVisit), delta: countDelta(current.newVisit, previous?.newVisit ?? 0), previous: `${comparisonLabel} · 신규 환자 실제 내원`, icon: "", tone: "blue" as const },
+      { label: "비예약 내원", value: value(current.walkInVisit), delta: countDelta(current.walkInVisit, previous?.walkInVisit ?? 0), previous: `${comparisonLabel} · 예약 없이 직접 내원`, icon: "", tone: "orange" as const },
+      { label: "총 결제매출", value: formatWon(current.sales), delta: countDelta(current.sales, previous?.sales ?? 0), previous: `${comparisonLabel} · 결제액 - 환불액`, icon: "", tone: "green" as const },
+      { label: "총 광고비", value: formatWon(current.adSpend), delta: countDelta(current.adSpend, previous?.adSpend ?? 0), previous: "온라인 광고비 + CRM 발송비 + 고정광고비", icon: "", tone: "orange" as const },
+      { label: "문의당 비용", value: cost(current.cpl), delta: "자동 계산", previous: "총 광고비 ÷ 전체 문의", icon: "", tone: "violet" as const },
+      { label: "신환당 비용", value: cost(current.cpv), delta: "자동 계산", previous: "총 광고비 ÷ 신환 내원", icon: "", tone: "blue" as const },
+    ];
+  }, [actualKpiResult, comparisonLabel, countDelta, previousKpiResult]);
+
+  const consultOperationCards = useMemo<MetricCard[]>(() => {
+    if (!actualKpiResult) return [];
+    const current = actualKpiResult.summary;
+    const previous = previousKpiResult?.summary;
+    const rate = (value: number | null) => value === null ? "-" : `${value}%`;
+    return [
+      { label: "전체 문의", value: current.inquiry.toLocaleString("ko-KR"), delta: countDelta(current.inquiry, previous?.inquiry ?? 0), previous: "상담문의 전체 건수", icon: "", tone: "green" },
+      { label: "예약확정", value: current.reservation.toLocaleString("ko-KR"), delta: countDelta(current.reservation, previous?.reservation ?? 0), previous: "상담 결과 예약확정", icon: "", tone: "violet" },
+      { label: "미예약", value: current.unreserved.toLocaleString("ko-KR"), delta: "결과 입력 기준", previous: "상담 결과가 미예약", icon: "", tone: "orange" },
+      { label: "예약취소", value: current.cancelledReservation.toLocaleString("ko-KR"), delta: "예약 상태 기준", previous: "예약 취소 건수", icon: "", tone: "blue" },
+      { label: "예약률", value: rate(current.reservationRate), delta: rateDelta(current.reservationRate, previous?.reservationRate ?? null), previous: "예약확정 ÷ 전체 문의", icon: "", tone: "green" },
+      { label: "비예약 내원", value: current.walkInVisit.toLocaleString("ko-KR"), delta: countDelta(current.walkInVisit, previous?.walkInVisit ?? 0), previous: "예약 없이 직접 내원", icon: "", tone: "violet" },
+      { label: "비예약 내원율", value: rate(current.walkInRate), delta: rateDelta(current.walkInRate, previous?.walkInRate ?? null), previous: "비예약 내원 ÷ 신환 내원", icon: "", tone: "orange" },
+      { label: "노쇼율", value: rate(current.noShowRate), delta: rateDelta(current.noShowRate, previous?.noShowRate ?? null), previous: "예약 미내원 ÷ 예약", icon: "", tone: "blue" },
+    ];
+  }, [actualKpiResult, countDelta, previousKpiResult, rateDelta]);
 
   const dimensionReconciliation = actualKpiResult
     ? [
@@ -2255,6 +2329,7 @@ export default function Home() {
       inquiries: summary?.inquiry ?? 0,
       reservations: summary?.reservation ?? 0,
       visits: summary?.newVisit ?? 0,
+      payments: summary?.paymentPatientCount ?? 0,
       sales: summary?.sales ?? 0,
       adSpend: mergedAdSourceRows.length ? mergedAdSourceTotals.spend : summary?.adSpend ?? 0,
     };
@@ -2762,6 +2837,30 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="panel table-panel">
+        <ChartHeader title="문의 → 예약확정 → 실제 내원 → 결제 퍼널" right={<span className="chart-period-note">{periodDefinition.range}</span>} />
+        <p className="table-helper">각 단계는 동일한 선택 기간의 CRM 원천 데이터로 재계산합니다. 결제환자는 환자 가명키가 있으면 환자 기준, 없으면 결제 건수 기준으로 집계합니다.</p>
+        <div className="data-table">
+          <div className="table-head channel-funnel-head">
+            <span>단계</span><span>현재 건수</span><span>직전 단계 전환율</span><span>누적 전환율</span><span>직전 단계 이탈</span>
+          </div>
+          {[
+            { label: "전체 문의", value: kpiDecisionData.totals.inquiries },
+            { label: "예약확정", value: kpiDecisionData.totals.reservations },
+            { label: "실제 내원", value: kpiDecisionData.totals.visits },
+            { label: "결제환자", value: kpiDecisionData.totals.payments },
+          ].map((step, index, steps) => {
+            const first = Math.max(1, steps[0].value);
+            const previous = index > 0 ? steps[index - 1].value : null;
+            const stageRate = previous === null ? 100 : Math.round(step.value / Math.max(1, previous) * 1000) / 10;
+            const totalRate = Math.round(step.value / first * 1000) / 10;
+            return <div className="table-row channel-funnel-row" key={step.label}>
+              <b>{step.label}</b><span>{step.value.toLocaleString("ko-KR")}</span><strong>{stageRate}%</strong><strong>{totalRate}%</strong><span>{previous === null ? "-" : Math.max(0, previous - step.value).toLocaleString("ko-KR")}</span>
+            </div>;
+          })}
+        </div>
+      </section>
+
       <section className="kpi-decision-grid">
         <article className="panel kpi-funnel-panel">
           <ChartHeader title="문의 → 예약 → 내원 전환 퍼널" />
@@ -2944,6 +3043,22 @@ export default function Home() {
         </article>
       </section>
 
+      <section className="panel table-panel">
+        <ChartHeader title="진료분야별 마케팅 요약" right={<span className="chart-period-note">문의·예약·신환·매출·광고비</span>} />
+        <p className="table-helper">진료분야는 교통사고, 재활, 성장, 다이어트, 암, 기타로 통일해 비교합니다. 광고비 또는 결제 연결값이 없으면 비용·ROAS는 미연동으로 표시됩니다.</p>
+        <div className="data-table">
+          <div className="table-head ad-channel-metric-head">
+            <span>진료분야</span><span>문의</span><span>예약</span><span>신환 내원</span><span>결제매출</span><span>광고비</span><span>문의당 비용</span><span>신환당 비용</span><span>ROAS</span>
+          </div>
+          {(actualKpiResult?.departments ?? []).map((row) => (
+            <div className="table-row ad-channel-metric-row" key={`department-kpi-${row.department}`}>
+              <b>{row.department}</b><span>{row.inquiries.toLocaleString("ko-KR")}</span><span>{row.reservations.toLocaleString("ko-KR")}</span><span>{row.newVisits.toLocaleString("ko-KR")}</span><span>{formatWon(row.sales)}</span><span>{formatWon(row.adSpend)}</span><span>{row.cpl === null ? "미연동" : formatWon(row.cpl)}</span><span>{row.cpv === null ? "미연동" : formatWon(row.cpv)}</span><strong>{row.roas === null ? "미연동" : `${row.roas}%`}</strong>
+            </div>
+          ))}
+          {!actualKpiResult?.departments.length ? <div className="data-empty-row">선택 기간의 진료분야별 원천 데이터가 없습니다.</div> : null}
+        </div>
+      </section>
+
       <section className="panel marketing-correlation-panel">
         <ChartHeader title="마케팅 · CRM 상관관계 진단" right={<span className="chart-period-note">{activeKpiRows.length}일 데이터</span>} />
         <p className="table-helper">같은 날짜의 지표가 함께 움직였는지 확인합니다. 상관계수는 원인을 증명하지 않으며, 캠페인 지연 효과와 외부 요인은 별도 검증이 필요합니다.</p>
@@ -3039,7 +3154,7 @@ export default function Home() {
       <section className="panel kpi-panel">
         <div className="section-title">상담 · 예약 분석</div>
         <div className="kpi-grid">
-          {mainMetricCards.map((card) => (
+          {(consultOperationCards.length ? consultOperationCards : mainMetricCards).map((card) => (
             <MetricCardView key={card.label} card={card} />
           ))}
         </div>
@@ -3111,6 +3226,30 @@ export default function Home() {
             <div className="metric-mini-card"><span>홈페이지 문의</span><strong>{actualKpiResult ? onlineChannelSummary.homepage.toLocaleString("ko-KR") : "-"}</strong><b>{actualKpiResult ? countDelta(onlineChannelSummary.homepage, previousOnlineChannelSummary.homepage) : "데이터 미연동"}</b><small>{periodDefinition.compare}</small></div>
             <div className="metric-mini-card"><span>예약 수</span><strong>{actualKpiResult ? currentSummary.onlineReservation?.toLocaleString("ko-KR") ?? "-" : "-"}</strong><b>{actualKpiResult ? countDelta(currentSummary.onlineReservation ?? 0, previousSummary.onlineReservation ?? 0) : "데이터 미연동"}</b><small>{periodDefinition.compare}</small></div>
             <div className="metric-mini-card"><span>예약률</span><strong>{actualKpiResult && currentSummary.onlineInquiry ? `${Math.round((currentSummary.onlineReservation / currentSummary.onlineInquiry) * 1000) / 10}%` : "-"}</strong><b>{actualKpiResult && currentSummary.onlineInquiry ? rateDelta(Math.round((currentSummary.onlineReservation / currentSummary.onlineInquiry) * 1000) / 10, previousSummary.onlineInquiry ? Math.round((previousSummary.onlineReservation / previousSummary.onlineInquiry) * 1000) / 10 : 0) : "데이터 미연동"}</b><small>{periodDefinition.compare}</small></div>
+          </div>
+        </article>
+      </section>
+
+      <section className="chart-grid">
+        <article className="panel table-panel">
+          <ChartHeader title="문의수단별 상담 전환" right={<span className="chart-period-note">최초 문의수단 기준</span>} />
+          <div className="data-table">
+            <div className="table-head online-consult-table-head"><span>문의수단</span><span>문의</span><span>예약확정</span><span>비예약 내원</span><span>예약률</span></div>
+            {(actualKpiResult?.channels ?? []).map((row) => {
+              const walkIn = Math.max(0, row.newVisits - Math.min(row.newVisits, row.reservations));
+              const rate = row.inquiries > 0 ? `${Math.round(row.reservations / row.inquiries * 1000) / 10}%` : "-";
+              return <div className="table-row online-consult-table-row" key={`consult-channel-${row.channel}`}><b>{row.channel}</b><span>{row.inquiries.toLocaleString("ko-KR")}</span><span>{row.reservations.toLocaleString("ko-KR")}</span><span>{walkIn.toLocaleString("ko-KR")}</span><strong>{rate}</strong></div>;
+            })}
+            {!(actualKpiResult?.channels ?? []).length ? <div className="data-empty-row">문의수단이 포함된 CRM 상담 데이터가 없습니다.</div> : null}
+          </div>
+        </article>
+
+        <article className="panel table-panel">
+          <ChartHeader title="최초유입경로별 성과" right={<span className="chart-period-note">상담·내원 연결 기준</span>} />
+          <div className="data-table">
+            <div className="table-head online-consult-table-head"><span>유입경로</span><span>문의</span><span>예약</span><span>신환 내원</span><span>매출</span></div>
+            {(actualKpiResult?.referrals ?? []).map((row) => <div className="table-row online-consult-table-row" key={`referral-summary-${row.source}`}><b>{row.source}</b><span>{row.inquiries.toLocaleString("ko-KR")}</span><span>{row.reservations.toLocaleString("ko-KR")}</span><span>{row.newVisits.toLocaleString("ko-KR")}</span><strong>{formatWon(row.sales)}</strong></div>)}
+            {!(actualKpiResult?.referrals ?? []).length ? <div className="data-empty-row">유입경로가 포함된 내원 데이터가 없습니다.</div> : null}
           </div>
         </article>
       </section>
@@ -3353,6 +3492,23 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="panel table-panel">
+        <ChartHeader title="통합 광고비 구성" right={<span className="chart-period-note">온라인 + CRM + 고정광고비</span>} />
+        <p className="table-helper">광고비 구분은 광고비 시트의 <code>cost_type</code> 열로 관리합니다. 미입력 행은 온라인 광고비로 분류해 기존 데이터와의 호환성을 유지합니다.</p>
+        <div className="data-table">
+          <div className="table-head online-consult-table-head"><span>비용 구분</span><span>기간 광고비</span><span>전체 광고비 비중</span><span>활용 기준</span></div>
+          {[
+            { label: "온라인 광고비", value: actualKpiResult?.summary.onlineAdSpend ?? 0, note: "매체·캠페인·광고그룹 성과" },
+            { label: "CRM 발송비", value: actualKpiResult?.summary.crmSpend ?? 0, note: "발송수·문의·예약 성과" },
+            { label: "고정광고비", value: actualKpiResult?.summary.fixedAdSpend ?? 0, note: "업체·계약·분야별 비용 구조" },
+          ].map((row) => {
+            const total = actualKpiResult?.summary.adSpend ?? 0;
+            const share = total > 0 ? `${Math.round(row.value / total * 1000) / 10}%` : "-";
+            return <div className="table-row online-consult-table-row" key={row.label}><b>{row.label}</b><span>{formatWon(row.value)}</span><strong>{share}</strong><span>{row.note}</span></div>;
+          })}
+        </div>
+      </section>
+
       <section className={`panel ai-panel ${!aiSettings.enabled ? "ai-disabled" : ""}`}>
         <div className="ai-head">
           <div className="ai-head-left">
@@ -3566,6 +3722,15 @@ export default function Home() {
               </div>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="panel table-panel">
+        <ChartHeader title="CRM · 고정광고비 운영 성과" right={<span className="chart-period-note">비용구분 입력 기준</span>} />
+        <div className="data-table">
+          <div className="table-head ad-raw-metric-head"><span>구분</span><span>캠페인/업체</span><span>진료분야</span><span>비용</span><span>발송</span><span>문의</span><span>예약</span><span>문의당 비용</span><span>계약종료</span></div>
+          {crmAndFixedRows.map((row, index) => <div className="table-row ad-raw-metric-row" key={`${row.type}-${row.name}-${index}`}><b>{row.type}</b><span>{row.name}</span><span>{row.department}</span><span>{formatWon(row.spend)}</span><span>{row.sent ? row.sent.toLocaleString("ko-KR") : "-"}</span><span>{row.inquiries ? row.inquiries.toLocaleString("ko-KR") : "-"}</span><span>{row.reservations ? row.reservations.toLocaleString("ko-KR") : "-"}</span><span>{row.inquiries ? formatWon(Math.round(row.spend / row.inquiries)) : "-"}</span><strong>{row.contractEnd}</strong></div>)}
+          {!crmAndFixedRows.length ? <div className="data-empty-row">CRM 또는 고정광고비 행이 없습니다. 광고비 시트에 cost_type을 crm 또는 fixed로 입력하면 표시됩니다.</div> : null}
         </div>
       </section>
 
