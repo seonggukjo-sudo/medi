@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS leads (hospital_id TEXT NOT NULL, lead_id TEXT NOT NU
 CREATE INDEX IF NOT EXISTS leads_patient_idx ON leads (hospital_id, patient_key);
 CREATE INDEX IF NOT EXISTS leads_received_idx ON leads (hospital_id, received_at);
 CREATE TABLE IF NOT EXISTS appointments (hospital_id TEXT NOT NULL, appointment_id TEXT NOT NULL, lead_id TEXT, patient_key TEXT NOT NULL, department TEXT NOT NULL, booked_at TEXT NOT NULL, scheduled_at TEXT NOT NULL, status TEXT NOT NULL, batch_id TEXT NOT NULL, PRIMARY KEY (hospital_id, appointment_id));
-CREATE INDEX IF NOT EXISTS appointments_booked_idx ON appointments (hospital_id, booked_at);
 CREATE INDEX IF NOT EXISTS appointments_scheduled_idx ON appointments (hospital_id, scheduled_at);
 CREATE TABLE IF NOT EXISTS visits (hospital_id TEXT NOT NULL, visit_id TEXT NOT NULL, appointment_id TEXT, patient_key TEXT NOT NULL, department TEXT NOT NULL, visit_source TEXT NOT NULL, visit_type TEXT NOT NULL, visited_at TEXT NOT NULL, batch_id TEXT NOT NULL, PRIMARY KEY (hospital_id, visit_id));
 CREATE INDEX IF NOT EXISTS visits_visited_idx ON visits (hospital_id, visited_at);
